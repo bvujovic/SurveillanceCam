@@ -1,15 +1,29 @@
 #include "Setts.h"
-#include <EasyINI.h>
 
 bool Setts::loadSetts()
 {
-    EasyINI ini("/config.ini");
-    if (ini.open(FMOD_READ))
+    ini = new EasyINI(fileName);
+    if (ini->open(FMOD_READ))
     {
-        sleepSeconds = ini.getInt("sleep_seconds");
-        ini.close();
+        setPhotoInterval(ini->getInt("photoInterval"));
+        setImageResolution(ini->getInt("imageResolution"));
+        setBrightness(ini->getInt("brightness"));
+        setGain(ini->getInt("gain"));
+        ini->close();
         return true;
     }
     else
         return false;
+}
+
+void Setts::saveSetts()
+{
+    if (ini->open(FMOD_WRITE))
+    {
+        ini->setInt("photoInterval", photoInterval);
+        ini->setInt("imageResolution", imageResolution);
+        ini->setInt("brightness", brightness);
+        ini->setInt("gain", gain);
+        ini->close();
+    }
 }

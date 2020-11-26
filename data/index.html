@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>WebCam Preview</title>
+    <link rel="icon" type="image/png" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        function previewImage() {
+            img.onload = function () { previewImageDelayed(); }
+            var t = new Date().getTime();
+            // img.src = server + '/preview?now=' + t;
+            img.src = 'preview?now=' + t;
+        }
+        function previewImageDelayed() {
+            var val = selRefresh.value;
+            if (val == 0) // Slika se trazi na klik, ne na zadati interval.
+                return;
+            setTimeout(previewImage, val * 1000);
+        }
+        function saveSettings() {
+            var setts = [];
+            setts.push("imageResolution=" + imageResolution.value);
+            setts.push("brightness=" + brightness.value);
+            setts.push("gain=" + gain.value);
+            setts.push("photoInterval=" + photoInterval.value);
+            var s = setts.join('&');
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("GET", "/saveSettings?" + s, true);
+            xhttp.setRequestHeader("Content-type", "text/plain");
+            xhttp.send();
+        }
+        function readSdCard() {
+            var colorNormal = btnReadSdCard.style.color;
+            btnReadSdCard.style.color = 'red';
+            while (sd_images.options.length > 0)
+                sd_images.options.remove(0);
+
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function () {
+                if (this.readyState == 4) {
+                    btnReadSdCard.style.color = colorNormal;
+                    if (this.status == 200) {
+                        var imgs = this.responseText.split('\n');
+                        for (const img of imgs) {
+                            if (img.trim().length === 0) continue;
+                            var opt = document.createElement("option");
+                            opt.text = img;
+                            sd_images.options.add(opt);
+                        }
+                    }
+                }
+            };
+            xhttp.open('GET', 'listSdCard', true); xhttp.send();
+        }
+        function sdImageSel() {
+            var idx = sd_images.selectedIndex;
+            img.src = 'sdCardImg?img=' + sd_images.options[idx].text;
+        }
+        function loadFavicoDelayed() {
+            setTimeout(loadFavico, 2000);
+        }
+        function loadFavico() {
+            document.querySelector("link[rel='icon']").href = "webcam.png";
+        }
+        function loadConfigIniDelayed() {
+            setTimeout(loadConfigIni, 1000);
+        }
+        function loadConfigIni() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200) {
+                    var setts = this.responseText.split('\n');
+                    for (const sett of setts) {
+                        var nameVal = sett.trim().split('=');
+                        var el = document.getElementById(nameVal[0]);
+                        if (el != null)
+                            el.value = nameVal[1];
+                    }
+                }
+            };
+            xhttp.open('GET', 'config.ini', true); xhttp.send();
+        }
+        function getImageName() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function () {
+                if (this.readyState == 4 && this.status == 200)
+                    lblImageName.innerText = this.responseText;
+            };
+            xhttp.open('GET', 'getImageName', true); xhttp.send();
+        }
+        function resetEsp() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.open('GET', 'reset', true); xhttp.send();
+        }
+    </script>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Segoe UI', Verdana, sans-serif;
+            width: 2000px;
+        }
+
+        .ctrl {
+            width: 60px;
+        }
+
+        th,
+        td {
+            padding: 5px;
+        }
+
+        a {
+            color: green;
+            display: block;
+        }
+
+        div {
+            float: left;
+            margin: 0 10px;
+        }
+
+        img {
+            margin: 5px;
+        }
+
+        .longBtn {
+            width: 120px;
+        }
+    </style>
+</head>
+
+<body onload="loadFavicoDelayed(); loadConfigIniDelayed();">
+    <div>
+        <h2>Settings</h2>
+        <table>
+            <tr>
+                <td>Name</td>
+                <td>Value</td>
+            </tr>
+            <tr>
+                <td>Resolution</td>
+                <td>
+                    <select id="imageResolution">
+                        <option value="10">UXGA(1600x1200)</option>
+                        <option value="9">SXGA(1280x1024)</option>
+                        <option value="8">XGA(1024x768)</option>
+                        <option value="7">SVGA(800x600)</option>
+                        <option value="6">VGA(640x480)</option>
+                        <option value="5">CIF(400x296)</option>
+                        <option value="4" selected="selected">QVGA(320x240)</option>
+                        <option value="3">HQVGA(240x176)</option>
+                        <option value="0">QQVGA(160x120)</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td>Brightness</td>
+                <td>
+                    <select id="brightness" class="ctrl">
+                        <option value="-2">-2</option>
+                        <option value="-1">-1</option>
+                        <option value="0" selected="selected">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td>Gain Ceiling</td>
+                <td>
+                    <select id="gain" class="ctrl">
+                        <option value="0" selected="selected">2</option>
+                        <option value="1">4</option>
+                        <option value="2">8</option>
+                        <option value="3">16</option>
+                        <option value="4">32</option>
+                        <option value="5">64</option>
+                        <option value="6">128</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td>Photo Interval</td>
+                <td><input type="number" min='5' step='10' id='photoInterval' class="ctrl" /></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><button onclick="saveSettings()" class="ctrl">Ok</button></td>
+            </tr>
+        </table>
+        <!-- Ostala moguca podesavanja: wb_mode, blic, flip -->
+        <hr>
+
+        <h2>Camera Preview</h2>
+        <button onclick="selRefresh.value = 0; previewImage();" class="longBtn">Preview</button>
+        <select id="selRefresh" onchange="previewImageDelayed()">
+            <option value="0">On Click</option>
+            <option value="3">3 seconds</option>
+            <option value="5">5 seconds</option>
+            <option value="10">10 seconds</option>
+            <option value="15">15 seconds</option>
+            <option value="30">30 seconds</option>
+            <option value="60">60 seconds</option>
+        </select>
+        <br>
+        <button onclick="getImageName();" class="longBtn">Get Image Name</button>
+        <br>
+        <label id='lblImageName'></label>
+        <br>
+        <hr>
+
+        <h2>SD Card</h2>
+        <button id="btnReadSdCard" onclick="readSdCard();" class="longBtn">Read SD card</button>
+        <br>
+        <select id="sd_images" size="10" style="width: 200px; margin-top: 5px;" onchange="sdImageSel()">
+        </select>
+        <br>
+        <hr>
+
+        <button id="btnReset" onclick="resetEsp();" class="longBtn">Reset ESP</button>
+    </div>
+
+    <div>
+        <img id='img' />
+    </div>
+</body>
+
+</html>
