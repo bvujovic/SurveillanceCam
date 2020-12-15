@@ -4,6 +4,20 @@
 #include <Blinky.h>
 Blinky blnk(33, false);
 
+ulong ms;
+uint64_t secToUsec(int sec) { return (uint64_t)1000 * 1000 * sec; }
+
+// Temporary problem. ESP will try to continue after reset.
+void errorTemp()
+{
+    blnk.blink(500, 3);
+    esp_sleep_enable_timer_wakeup(secToUsec(3));
+    esp_deep_sleep_start();
+}
+
+// Fatal error. ESP cannot continue working properly.
+void errorFatal() { blnk.blink(1000, 0); }
+
 #include "Setts.h"
 Setts setts;
 
@@ -11,13 +25,13 @@ Setts setts;
 AiThinkerCam cam;
 
 #include "SD_MMC.h"
-char imagePath[50]; // Ovde pakujem ime fajla/slike. Npr. img_YY_MM_DD.jpg
+char imagePath[50];                       // Ovde pakujem ime fajla/slike. Npr. img_YY_MM_DD.jpg
+const char fmtFolder[] = "/%d-%02d-%02d"; // Format za ime foldera sa slikama za dati dan: yyyy-mm-dd
 
 #include "time.h"
 #include "lwip/apps/sntp.h"
 struct tm ti;
 time_t now;
-//B RTC_DATA_ATTR int bootCount = 0;
 
 void getTime()
 {
@@ -25,7 +39,6 @@ void getTime()
     localtime_r(&now, &ti);
     ti.tm_year += 1900;
     ti.tm_mon++;
-    //? da li je sat dobro podesen izmedju 00 i 01 AM
     ti.tm_hour++;
     if (ti.tm_hour == 24)
     {
@@ -49,6 +62,8 @@ void initTime()
         delay(2000);
         getTime();
     }
+    if (retry >= retry_count)
+        errorFatal();
 }
 
 #include <WiFiServerBasics.h>
@@ -93,15 +108,31 @@ void SaveSettingsHandler()
     setts.setGain(server.arg("gain").toInt());
     s->set_gainceiling(s, (gainceiling_t)setts.gain);
     setts.setPhotoInterval(server.arg("photoInterval").toInt());
+    setts.setPhotoWait(server.arg("photoWait").toInt());
 
     setts.saveSetts();
     SendEmptyText(server);
 }
 
+// Ako ne postoji, kreira se folder sa proslenjenim datumom. Naziv foldera je u imagePath.
+void CreateFolderIN(int y, int m, int d)
+{
+    sprintf(imagePath, fmtFolder, y, m, d);
+    if (!SD_MMC.exists(imagePath))
+    {
+        bool res = SD_MMC.mkdir(imagePath);
+        Serial.println("mkdir: " + String(res));
+    }
+}
+
+// /listSdCard?y=2020&m=12&d=15
 void ListSdCardHandler()
 {
+    CreateFolderIN(server.arg("y").toInt(), server.arg("m").toInt(), server.arg("d").toInt());
+
     String str;
-    File dir = SD_MMC.open("/");
+    //B File dir = SD_MMC.open("/");
+    File dir = SD_MMC.open(imagePath);
     if (dir)
     {
         File f;
@@ -133,8 +164,13 @@ void SdCardImgHandler()
 void GetImageName(bool serverReply)
 {
     getTime();
-    sprintf(imagePath, "/pic_%02d-%02d-%02d_%02d.%02d.%02d.jpg", ti.tm_year, ti.tm_mon, ti.tm_mday, ti.tm_hour, ti.tm_min, ti.tm_sec);
-    if (true)
+    CreateFolderIN(ti.tm_year, ti.tm_mon, ti.tm_mday);
+    if (TEST)
+        sprintf(imagePath, "%s/%02d.%02d.%02d.jpg", imagePath, ti.tm_hour, ti.tm_min, ti.tm_sec);
+    else
+        sprintf(imagePath, "%s/%02d.%02d.jpg", imagePath, ti.tm_hour, ti.tm_min);
+
+    if (serverReply)
         server.send(200, "text/plain", imagePath);
 }
 
@@ -145,20 +181,6 @@ enum DeviceMode
 } deviceMode;
 
 const int pinDeviceMode = 1;
-
-ulong ms;
-uint64_t secToUsec(int sec) { return (uint64_t)1000 * 1000 * sec; }
-
-// Temporary problem. ESP will try to continue after reset.
-void errorTemp()
-{
-    blnk.blink(500, 3);
-    esp_sleep_enable_timer_wakeup(secToUsec(3));
-    esp_deep_sleep_start();
-}
-
-// Fatal error. ESP cannot continue working properly.
-void errorFatal() { blnk.blink(1000, 0); }
 
 void setup()
 {
@@ -181,7 +203,6 @@ void setup()
 
     pinMode(pinDeviceMode, INPUT_PULLUP);
     deviceMode = digitalRead(pinDeviceMode) ? DM_WebServer : DM_GetImage;
-    //T deviceMode = DM_WebServer;
 
     if (deviceMode == DM_WebServer)
     {
@@ -197,22 +218,33 @@ void setup()
         server.on("/getImageName", []() { GetImageName(true); });
         server.on("/reset", []() {
             SendEmptyText(server);
-            delay(200);
+            delay(500);
             esp_sleep_enable_timer_wakeup(secToUsec(TEST ? 5 : 15));
             esp_deep_sleep_start();
         });
         server.begin();
     }
 
-    if (deviceMode == DM_GetImage)
+#if TEST
+    blnk.ledOn(false);
+#endif
+}
+
+void loop()
+{
+    if (deviceMode == DM_WebServer)
+        server.handleClient();
+
+    if (deviceMode == DM_GetImage && millis() - ms > setts.photoWait * 1000)
     {
-        delay(1000);
+#if TEST
+        blnk.ledOn(true);
+#endif
         camera_fb_t *fb = cam.getFrameBuffer();
         if (!fb)
             errorTemp();
 
         GetImageName(false);
-        //T strcpy(imagePath, "/img0.jpg");
 
         File file = SD_MMC.open(imagePath, FILE_WRITE);
         if (!file)
@@ -225,18 +257,12 @@ void setup()
         cam.returnFrameBuffer(fb);
         SD_MMC.end();
 
+#if TEST
+        blnk.ledOn(false);
+#endif
         esp_sleep_enable_timer_wakeup(secToUsec(setts.photoInterval));
         esp_deep_sleep_start();
     }
 
-#if TEST
-    blnk.ledOn(false);
-#endif
-}
-
-void loop()
-{
-    if (deviceMode == DM_WebServer)
-        server.handleClient();
     delay(100);
 }

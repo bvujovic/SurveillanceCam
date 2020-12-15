@@ -7,6 +7,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>
+        function setTodaysDate() {
+            var day = new Date();
+            sdDate.value = day.getFullYear() + '-' + (day.getMonth() + 1) + '-' + day.getDate();
+        }
         function previewImage() {
             img.onload = function () { previewImageDelayed(); }
             var t = new Date().getTime();
@@ -25,6 +29,7 @@
             setts.push("brightness=" + brightness.value);
             setts.push("gain=" + gain.value);
             setts.push("photoInterval=" + photoInterval.value);
+            setts.push("photoWait=" + photoWait.value);
             var s = setts.join('&');
             var xhttp = new XMLHttpRequest();
             xhttp.open("GET", "/saveSettings?" + s, true);
@@ -42,9 +47,20 @@
                 if (this.readyState == 4) {
                     btnReadSdCard.style.color = colorNormal;
                     if (this.status == 200) {
+                        //B var dateFilter = sdDate.value.trim();
+                        var hourFilter = sdHour.value;
+                        if (hourFilter.length == 1)
+                            hourFilter = '0' + hourFilter;
+                        if (hourFilter != "")
+                            hourFilter = '/' + hourFilter + '.';
+
+                        console.log(this.responseText);
                         var imgs = this.responseText.split('\n');
                         for (const img of imgs) {
-                            if (img.trim().length === 0) continue;
+                            if (img.trim().length === 0
+                                //B || (dateFilter != "" && !img.startsWith("/" + dateFilter))
+                                || (hourFilter != "" && img.indexOf(hourFilter) == -1))
+                                continue;
                             var opt = document.createElement("option");
                             opt.text = img;
                             sd_images.options.add(opt);
@@ -52,7 +68,9 @@
                     }
                 }
             };
-            xhttp.open('GET', 'listSdCard', true); xhttp.send();
+            const d = new Date(sdDate.value);
+            const url = 'listSdCard?y=' + d.getFullYear() + '&m=' + (d.getMonth() + 1) + '&d=' + d.getDate();
+            xhttp.open('GET', url, true); xhttp.send();
         }
         function sdImageSel() {
             var idx = sd_images.selectedIndex;
@@ -71,10 +89,10 @@
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4 && this.status == 200) {
-                    var setts = this.responseText.split('\n');
+                    const setts = this.responseText.split('\n');
                     for (const sett of setts) {
-                        var nameVal = sett.trim().split('=');
-                        var el = document.getElementById(nameVal[0]);
+                        const nameVal = sett.trim().split('=');
+                        const el = document.getElementById(nameVal[0]);
                         if (el != null)
                             el.value = nameVal[1];
                     }
@@ -132,7 +150,7 @@
     </style>
 </head>
 
-<body onload="loadFavicoDelayed(); loadConfigIniDelayed();">
+<body onload=" loadFavicoDelayed(); loadConfigIniDelayed(); setTodaysDate(); ">
     <div>
         <h2>Settings</h2>
         <table>
@@ -184,7 +202,11 @@
             </tr>
             <tr>
                 <td>Photo Interval</td>
-                <td><input type="number" min='5' step='10' id='photoInterval' class="ctrl" /></td>
+                <td><input type="number" min='5' id='photoInterval' class="ctrl" /></td>
+            </tr>
+            <tr>
+                <td>Photo Wait</td>
+                <td><input type="number" min='0' max='10' id='photoWait' class="ctrl" /></td>
             </tr>
             <tr>
                 <td></td>
@@ -213,7 +235,9 @@
         <hr>
 
         <h2>SD Card</h2>
+        <input type="date" id="sdDate" placeholder="yyyy-mm-dd"> <br>
         <button id="btnReadSdCard" onclick="readSdCard();" class="longBtn">Read SD card</button>
+        <br>Filter hour: <input type="number" id="sdHour" min="0" max="23" style="width: 32px;">
         <br>
         <select id="sd_images" size="10" style="width: 200px; margin-top: 5px;" onchange="sdImageSel()">
         </select>

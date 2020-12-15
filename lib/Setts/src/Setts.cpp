@@ -9,6 +9,7 @@ bool Setts::loadSetts()
         setImageResolution(ini->getInt("imageResolution"));
         setBrightness(ini->getInt("brightness"));
         setGain(ini->getInt("gain"));
+        setPhotoWait(ini->getInt("photoWait"));
         ini->close();
         return true;
     }
@@ -24,6 +25,7 @@ void Setts::saveSetts()
         ini->setInt("imageResolution", imageResolution);
         ini->setInt("brightness", brightness);
         ini->setInt("gain", gain);
+        ini->setInt("photoWait", photoWait);
         ini->close();
     }
 }
