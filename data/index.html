@@ -30,7 +30,10 @@
             setts.push("gain=" + gain.value);
             setts.push("photoInterval=" + photoInterval.value);
             setts.push("photoWait=" + photoWait.value);
+            setts.push("ipLastNum=" + ipLastNum.value);
+            setts.push("deviceName=" + deviceName.innerText);
             var s = setts.join('&');
+            // console.log(s);
             var xhttp = new XMLHttpRequest();
             xhttp.open("GET", "/saveSettings?" + s, true);
             xhttp.setRequestHeader("Content-type", "text/plain");
@@ -54,7 +57,7 @@
                         if (hourFilter != "")
                             hourFilter = '/' + hourFilter + '.';
 
-                        console.log(this.responseText);
+                        // console.log(this.responseText);
                         var imgs = this.responseText.split('\n');
                         for (const img of imgs) {
                             if (img.trim().length === 0
@@ -89,12 +92,15 @@
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4 && this.status == 200) {
+                    // console.log(this.responseText);
                     const setts = this.responseText.split('\n');
                     for (const sett of setts) {
                         const nameVal = sett.trim().split('=');
                         const el = document.getElementById(nameVal[0]);
                         if (el != null)
                             el.value = nameVal[1];
+                        if (nameVal[0] == "deviceName")
+                            deviceName.innerText = nameVal[1];
                     }
                 }
             };
@@ -111,6 +117,11 @@
         function resetEsp() {
             var xhttp = new XMLHttpRequest();
             xhttp.open('GET', 'reset', true); xhttp.send();
+        }
+        function newDeviceName() {
+            var name = prompt("New WebCam Name:", deviceName.innerText);
+            if (name.trim() != '')
+                deviceName.innerText = name;
         }
     </script>
     <style>
@@ -152,6 +163,8 @@
 
 <body onload=" loadFavicoDelayed(); loadConfigIniDelayed(); setTodaysDate(); ">
     <div>
+        <h1 id='deviceName' onclick='newDeviceName();'>WebCam Preview</h1>
+
         <h2>Settings</h2>
         <table>
             <tr>
@@ -209,6 +222,10 @@
                 <td><input type="number" min='0' max='10' id='photoWait' class="ctrl" /></td>
             </tr>
             <tr>
+                <td>IP Last Number</td>
+                <td><input type="number" min='60' max='69' id='ipLastNum' class="ctrl" /></td>
+            </tr>
+            <tr>
                 <td></td>
                 <td><button onclick="saveSettings()" class="ctrl">Ok</button></td>
             </tr>
@@ -244,7 +261,7 @@
         <br>
         <hr>
 
-        <button id="btnReset" onclick="resetEsp();" class="longBtn">Reset ESP</button>
+        <button id="btnReset" onclick="resetEsp();" class="longBtn">Save & Reset</button>
     </div>
 
     <div>

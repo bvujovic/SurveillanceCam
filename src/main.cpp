@@ -4,6 +4,8 @@
 #include <Blinky.h>
 Blinky blnk(33, false);
 
+#include "Enums.h"
+
 ulong ms;
 uint64_t secToUsec(int sec) { return (uint64_t)1000 * 1000 * sec; }
 
@@ -74,7 +76,7 @@ void wiFiOn()
     WiFi.mode(WIFI_STA);
     ConnectToWiFi();
     initTime();
-    SetupIPAddress(60);
+    SetupIPAddress(setts.ipLastNum);
 }
 
 // void wiFiOff()
@@ -101,6 +103,8 @@ void SaveSettingsHandler()
 {
     sensor_t *s = esp_camera_sensor_get();
 
+    setts.setDeviceName(server.arg("deviceName"));
+    setts.setIpLastNum(server.arg("ipLastNum").toInt());
     setts.setImageResolution(server.arg("imageResolution").toInt());
     s->set_framesize(s, (framesize_t)setts.imageResolution);
     setts.setBrightness(server.arg("brightness").toInt());
@@ -119,10 +123,7 @@ void CreateFolderIN(int y, int m, int d)
 {
     sprintf(imagePath, fmtFolder, y, m, d);
     if (!SD_MMC.exists(imagePath))
-    {
-        bool res = SD_MMC.mkdir(imagePath);
-        Serial.println("mkdir: " + String(res));
-    }
+        SD_MMC.mkdir(imagePath);
 }
 
 // /listSdCard?y=2020&m=12&d=15
@@ -174,13 +175,28 @@ void GetImageName(bool serverReply)
         server.send(200, "text/plain", imagePath);
 }
 
-enum DeviceMode
+int SleepSeconds(int m, int s, int itv)
 {
-    DM_WebServer, // Postavke sistema, podesavanje kadra (image preview)
-    DM_GetImage   // Slikanje pa spavanje
-} deviceMode;
+    if (itv % 60 != 0) // ako itv ne predstavlja tacan broj minuta, onda nema namestanja na pocetak minuta
+        return itv;
+    int x = itv / 60;            // 300/60 = 5
+    int nextMin = m / x * x + x; // 56/5 * 5 + 5 = 11*5 + 5 = 55 + 5 = 60
+    int min = nextMin - m;       // 60 - 56 = 4
+    int sec = min * 60 - s;      // 4*60 - 30 = 240 - 30 = 210
+    return sec;
+}
 
-const int pinDeviceMode = 1;
+void SleepSecondsHandler()
+{
+    int m = server.arg("m").toInt();
+    int s = server.arg("s").toInt();
+    int itv = server.arg("itv").toInt();
+    int sec = SleepSeconds(m, s, itv);
+
+    String str = "m=" + String(m) + "s=" + String(s) + "itv=" + String(itv);
+    str += "sec=" + String(sec);
+    server.send(200, "text/plain", str);
+}
 
 void setup()
 {
@@ -194,6 +210,11 @@ void setup()
     if (!setts.loadSetts())
         errorFatal();
 
+    //B pinMode(pinDeviceMode, INPUT_PULLUP);
+    //B deviceMode = digitalRead(pinDeviceMode) ? DM_WebServer : DM_GetImage;
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    setts.deviceMode = (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) ? DM_GetImage : DM_WebServer;
+
     if (!SD_MMC.begin("/sdcard", true)) // 1-bitni mod
         errorFatal();
 
@@ -201,10 +222,7 @@ void setup()
     if (err != ESP_OK)
         errorTemp();
 
-    pinMode(pinDeviceMode, INPUT_PULLUP);
-    deviceMode = digitalRead(pinDeviceMode) ? DM_WebServer : DM_GetImage;
-
-    if (deviceMode == DM_WebServer)
+    if (setts.deviceMode == DM_WebServer)
     {
         wiFiOn();
         server.on("/", []() { HandleDataFile(server, "/index.html", "text/html"); });
@@ -216,9 +234,11 @@ void setup()
         server.on("/listSdCard", ListSdCardHandler);
         server.on("/sdCardImg", SdCardImgHandler);
         server.on("/getImageName", []() { GetImageName(true); });
+        server.on("/ss", SleepSecondsHandler);
         server.on("/reset", []() {
             SendEmptyText(server);
             delay(500);
+            //? esp_sleep_enable_timer_wakeup(secToUsec(sec));
             esp_sleep_enable_timer_wakeup(secToUsec(TEST ? 5 : 15));
             esp_deep_sleep_start();
         });
@@ -232,10 +252,10 @@ void setup()
 
 void loop()
 {
-    if (deviceMode == DM_WebServer)
+    if (setts.deviceMode == DM_WebServer)
         server.handleClient();
 
-    if (deviceMode == DM_GetImage && millis() - ms > setts.photoWait * 1000)
+    if (setts.deviceMode == DM_GetImage && millis() - ms > setts.photoWait * 1000)
     {
 #if TEST
         blnk.ledOn(true);
@@ -260,7 +280,10 @@ void loop()
 #if TEST
         blnk.ledOn(false);
 #endif
-        esp_sleep_enable_timer_wakeup(secToUsec(setts.photoInterval));
+        // esp_sleep_enable_timer_wakeup(secToUsec(setts.photoInterval));
+        //? getTime 
+        int sec = SleepSeconds(ti.tm_min, ti.tm_sec, setts.photoInterval);
+        esp_sleep_enable_timer_wakeup(secToUsec(sec));
         esp_deep_sleep_start();
     }
 

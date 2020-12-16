@@ -2,33 +2,35 @@
 
 #include <Arduino.h>
 #include <EasyINI.h>
+#include "Enums.h"
 
 // Podesavanja sacuvana u config fajlu.
 class Setts
 {
 private:
     EasyINI *ini;
-    const int minPhotoInterval = 5;
-    const int maxImageResolution = 10;
-    const int minBrightness = -2;
-    const int maxBrightness = 2;
-    const int maxGain = 6;
-    const int maxPhotoWait = 10;
-    const char* fileName = "/config.ini";
+    const char *fileName = "/config.ini";
 
 public:
-    int photoInterval; // Cekanje (u sec) izmedju 2 slikanja.
-    void setPhotoInterval(int x) { photoInterval = max(x, minPhotoInterval); }
-    int imageResolution;
-    void setImageResolution(int res) { imageResolution = constrain(res, 0, maxImageResolution); }
-    int brightness;
-    void setBrightness(int x) { brightness = constrain(x, minBrightness, maxBrightness); }
-    int gain;
-    void setGain(int x) { gain = constrain(x, 0, maxGain); }
-    int photoWait; // Cekanje (u sec) od startovanja ESP-a do pravljenja slike. Ovo utice na kvalitet slike.
-    void setPhotoWait(int x) { photoWait = constrain(x, 0, maxPhotoWait); }
+    DeviceMode deviceMode;
+    void setDeviceMode(int x) { deviceMode = (DeviceMode)x; }
+    String deviceName; // Naziv uredjaja: soba, kuhinja, Perina kamera i sl.
+    void setDeviceName(String s) { deviceName = s; }
+    int ipLastNum; // Poslednji broj u lokalnoj IP adresi: 192.168.0.x
+    void setIpLastNum(int x) { ipLastNum = constrain(x, 60, 69); }
 
-    const char* getFileName() { return fileName; }
+    int photoInterval; // Cekanje (u sec) izmedju 2 slikanja.
+    void setPhotoInterval(int x) { photoInterval = max(x, 5); }
+    int imageResolution;
+    void setImageResolution(int x) { imageResolution = constrain(x, 0, 10); }
+    int brightness;
+    void setBrightness(int x) { brightness = constrain(x, -2, 2); }
+    int gain;
+    void setGain(int x) { gain = constrain(x, 0, 6); }
+    int photoWait; // Cekanje (u sec) od startovanja ESP-a do pravljenja slike. Ovo utice na kvalitet slike.
+    void setPhotoWait(int x) { photoWait = constrain(x, 0, 10); }
+
+    const char *getFileName() { return fileName; }
 
     // Ucitavanje podesavanja iz .ini fajla.
     bool loadSetts();
