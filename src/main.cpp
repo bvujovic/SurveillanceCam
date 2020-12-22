@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #define TEST true
 
+#include "driver/rtc_io.h"
+
 #include <Blinky.h>
 Blinky blnk(33, false);
 
@@ -20,6 +22,8 @@ void errorTemp()
 // Fatal error. ESP cannot continue working properly.
 void errorFatal() { blnk.blink(1000, 0); }
 
+ulong lastWebReq;
+
 #include "Setts.h"
 Setts setts;
 
@@ -32,11 +36,13 @@ const char fmtFolder[] = "/%d-%02d-%02d"; // Format za ime foldera sa slikama za
 
 #include "time.h"
 #include "lwip/apps/sntp.h"
-struct tm ti;
-time_t now;
+struct tm ti;                       // Tekuce/trenutno vreme.
+RTC_DATA_ATTR int timeInitHour = 0; // Sat poslednjeg uzimanja tacnog vremena sa interneta.
+// struct tm tiInit; // Vreme poslednjeg uzimanja tacnog vremena sa interneta.
 
 void getTime()
 {
+    time_t now;
     time(&now);
     localtime_r(&now, &ti);
     ti.tm_year += 1900;
@@ -66,6 +72,8 @@ void initTime()
     }
     if (retry >= retry_count)
         errorFatal();
+    else
+        timeInitHour = ti.tm_hour;
 }
 
 #include <WiFiServerBasics.h>
@@ -79,15 +87,9 @@ void wiFiOn()
     SetupIPAddress(setts.ipLastNum);
 }
 
-// void wiFiOff()
-// {
-//     WiFi.disconnect();
-//     WiFi.mode(WIFI_OFF);
-//     delay(100);
-// }
-
 void PreviewHandler()
 {
+    lastWebReq = millis();
     camera_fb_t *fb = cam.getFrameBuffer();
     if (!fb)
         server.send_P(404, "text/plain", "Camera capture failed");
@@ -101,21 +103,21 @@ void PreviewHandler()
 // http://192.168.0.60/settings?imageResolution=4&brightness=0&gain=0&photoInterval=300
 void SaveSettingsHandler()
 {
-    sensor_t *s = esp_camera_sensor_get();
-
+    lastWebReq = millis();
     setts.setDeviceName(server.arg("deviceName"));
     setts.setIpLastNum(server.arg("ipLastNum").toInt());
     setts.setImageResolution(server.arg("imageResolution").toInt());
-    s->set_framesize(s, (framesize_t)setts.imageResolution);
     setts.setBrightness(server.arg("brightness").toInt());
-    s->set_brightness(s, setts.brightness);
     setts.setGain(server.arg("gain").toInt());
-    s->set_gainceiling(s, (gainceiling_t)setts.gain);
     setts.setPhotoInterval(server.arg("photoInterval").toInt());
     setts.setPhotoWait(server.arg("photoWait").toInt());
-
     setts.saveSetts();
     SendEmptyText(server);
+
+    sensor_t *s = esp_camera_sensor_get();
+    s->set_framesize(s, (framesize_t)setts.imageResolution);
+    s->set_brightness(s, setts.brightness);
+    s->set_gainceiling(s, (gainceiling_t)setts.gain);
 }
 
 // Ako ne postoji, kreira se folder sa proslenjenim datumom. Naziv foldera je u imagePath.
@@ -129,19 +131,23 @@ void CreateFolderIN(int y, int m, int d)
 // /listSdCard?y=2020&m=12&d=15
 void ListSdCardHandler()
 {
+    lastWebReq = millis();
     CreateFolderIN(server.arg("y").toInt(), server.arg("m").toInt(), server.arg("d").toInt());
+    char strHour[5] = "";
+    if (server.arg("h") != "")
+        sprintf(strHour, "/%02d.", (int)server.arg("h").toInt());
 
     String str;
-    //B File dir = SD_MMC.open("/");
     File dir = SD_MMC.open(imagePath);
+
     if (dir)
     {
         File f;
         while (f = dir.openNextFile())
         {
-            if (strstr(f.name(), ".jpg")) // samo me slike interesuju
+            if (strHour[0] == '\0' || strstr(f.name(), strHour))
                 (str += f.name()) += "\n";
-            f.close();
+            // f.close(); //* mozda f.close() ne treba i/ili to usporava sistem
         }
         dir.close();
         server.send(200, "text/x-csv", str);
@@ -152,6 +158,7 @@ void ListSdCardHandler()
 
 void SdCardImgHandler()
 {
+    lastWebReq = millis();
     File f = SD_MMC.open("/" + server.arg("img"), "r");
     if (f)
     {
@@ -166,7 +173,7 @@ void GetImageName(bool serverReply)
 {
     getTime();
     CreateFolderIN(ti.tm_year, ti.tm_mon, ti.tm_mday);
-    if (TEST)
+    if (setts.photoInterval % 60 != 0)
         sprintf(imagePath, "%s/%02d.%02d.%02d.jpg", imagePath, ti.tm_hour, ti.tm_min, ti.tm_sec);
     else
         sprintf(imagePath, "%s/%02d.%02d.jpg", imagePath, ti.tm_hour, ti.tm_min);
@@ -186,23 +193,33 @@ int SleepSeconds(int m, int s, int itv)
     return sec;
 }
 
-void SleepSecondsHandler()
+void GoToSleep()
 {
-    int m = server.arg("m").toInt();
-    int s = server.arg("s").toInt();
-    int itv = server.arg("itv").toInt();
-    int sec = SleepSeconds(m, s, itv);
+    getTime();
+    int sec = SleepSeconds(ti.tm_min, ti.tm_sec, setts.photoInterval);
+    esp_sleep_enable_timer_wakeup(secToUsec(sec));
+    esp_deep_sleep_start();
+}
 
-    String str = "m=" + String(m) + "s=" + String(s) + "itv=" + String(itv);
-    str += "sec=" + String(sec);
-    server.send(200, "text/plain", str);
+void ResetHandler()
+{
+    SendEmptyText(server);
+    delay(500);
+
+    // Turns off the ESP32-CAM white on-board LED (flash) connected to GPIO 4
+    gpio_num_t pinLedFlash = GPIO_NUM_4;
+    pinMode(pinLedFlash, OUTPUT);
+    digitalWrite(pinLedFlash, LOW);
+    rtc_gpio_hold_en(pinLedFlash);
+
+    GoToSleep();
 }
 
 void setup()
 {
-#if TEST
-    blnk.ledOn(true);
-#endif
+    // #if TEST
+    //     blnk.ledOn(true);
+    // #endif
     Serial.begin(115200);
     Serial.println();
     ms = millis();
@@ -210,50 +227,56 @@ void setup()
     if (!setts.loadSetts())
         errorFatal();
 
-    //B pinMode(pinDeviceMode, INPUT_PULLUP);
-    //B deviceMode = digitalRead(pinDeviceMode) ? DM_WebServer : DM_GetImage;
-    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
-    setts.deviceMode = (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) ? DM_GetImage : DM_WebServer;
+    setts.deviceMode = (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) ? DM_GetImage : DM_WebServer;
 
     if (!SD_MMC.begin("/sdcard", true)) // 1-bitni mod
         errorFatal();
 
     esp_err_t err = cam.setup((framesize_t)setts.imageResolution, PIXFORMAT_JPEG);
-    if (err != ESP_OK)
+    if (err == ESP_OK)
+    {
+        sensor_t *s = esp_camera_sensor_get();
+        s->set_brightness(s, setts.brightness);
+        s->set_gainceiling(s, (gainceiling_t)setts.gain);
+    }
+    else
         errorTemp();
 
     if (setts.deviceMode == DM_WebServer)
     {
         wiFiOn();
-        server.on("/", []() { HandleDataFile(server, "/index.html", "text/html"); });
+        server.on("/", []() { lastWebReq = millis(); HandleDataFile(server, "/index.html", "text/html"); });
         server.serveStatic("/webcam.png", SPIFFS, "/webcam.png"); // "image/png"
-        server.on(setts.getFileName(), []() { HandleDataFile(server, setts.getFileName(), "text/plain"); });
+        server.on(setts.getFileName(), []() { lastWebReq = millis(); HandleDataFile(server, setts.getFileName(), "text/plain"); });
         server.on("/preview", PreviewHandler);
         server.on("/saveSettings", SaveSettingsHandler);
         server.on("/test", []() { server.send(200, "text/plain", "SurveillanceCam test text."); });
         server.on("/listSdCard", ListSdCardHandler);
         server.on("/sdCardImg", SdCardImgHandler);
-        server.on("/getImageName", []() { GetImageName(true); });
-        server.on("/ss", SleepSecondsHandler);
-        server.on("/reset", []() {
-            SendEmptyText(server);
-            delay(500);
-            //? esp_sleep_enable_timer_wakeup(secToUsec(sec));
-            esp_sleep_enable_timer_wakeup(secToUsec(TEST ? 5 : 15));
-            esp_deep_sleep_start();
-        });
+        server.on("/getImageName", []() { GetImageName(true); }); //* zrelo za brisanje
+        server.on("/reset", ResetHandler);
         server.begin();
+        lastWebReq = millis();
     }
 
-#if TEST
-    blnk.ledOn(false);
-#endif
+    getTime();
+    //B if (ti.tm_hour != timeInitHour)
+    int blinks = timeInitHour - ti.tm_hour + 1;
+    blnk.blinkIrregular(200, 600, blinks > 5 ? 5 : blinks);
+
+    // #if TEST
+    //     blnk.ledOn(false);
+    // #endif
 }
 
 void loop()
 {
     if (setts.deviceMode == DM_WebServer)
+    {
         server.handleClient();
+        if (millis() - lastWebReq > 2 * 60 * 1000UL) //* od ovoga napraviti sett ili const
+            GoToSleep();
+    }
 
     if (setts.deviceMode == DM_GetImage && millis() - ms > setts.photoWait * 1000)
     {
@@ -280,11 +303,8 @@ void loop()
 #if TEST
         blnk.ledOn(false);
 #endif
-        // esp_sleep_enable_timer_wakeup(secToUsec(setts.photoInterval));
-        //? getTime 
-        int sec = SleepSeconds(ti.tm_min, ti.tm_sec, setts.photoInterval);
-        esp_sleep_enable_timer_wakeup(secToUsec(sec));
-        esp_deep_sleep_start();
+        //B getTime();
+        GoToSleep();
     }
 
     delay(100);

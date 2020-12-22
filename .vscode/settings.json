@@ -4,6 +4,8 @@
         "fstream": "cpp",
         "algorithm": "cpp",
         "string": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "sstream": "cpp",
+        "typeinfo": "cpp"
     }
 }

@@ -7,9 +7,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>
-        function setTodaysDate() {
-            var day = new Date();
-            sdDate.value = day.getFullYear() + '-' + (day.getMonth() + 1) + '-' + day.getDate();
+        var buttonColor;
+        function ButtonStart(btn) {
+            buttonColor = btn.style.backgroundColor;
+            btn.style.backgroundColor = 'red';
+        }
+        function ButtonEnd(btn) { btn.style.backgroundColor = buttonColor; }
+        function displayDateTime() {
+            const d = new Date();
+            sdDate.value = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+            sdHour.value = d.getHours();
         }
         function previewImage() {
             img.onload = function () { previewImageDelayed(); }
@@ -24,6 +31,10 @@
             setTimeout(previewImage, val * 1000);
         }
         function saveSettings() {
+            //B
+            // var colorNormal = btnSaveSetts.style.backgroundColor;
+            // btnSaveSetts.style.backgroundColor = 'red';
+            ButtonStart(btnSaveSetts);
             var setts = [];
             setts.push("imageResolution=" + imageResolution.value);
             setts.push("brightness=" + brightness.value);
@@ -33,46 +44,43 @@
             setts.push("ipLastNum=" + ipLastNum.value);
             setts.push("deviceName=" + deviceName.innerText);
             var s = setts.join('&');
-            // console.log(s);
             var xhttp = new XMLHttpRequest();
             xhttp.open("GET", "/saveSettings?" + s, true);
+            xhttp.onreadystatechange = function () {
+                if (this.readyState == 4)
+                    //B btnSaveSetts.style.backgroundColor = colorNormal;
+                    ButtonEnd(btnSaveSetts);
+            };
             xhttp.setRequestHeader("Content-type", "text/plain");
             xhttp.send();
         }
         function readSdCard() {
-            var colorNormal = btnReadSdCard.style.color;
-            btnReadSdCard.style.color = 'red';
+            // var colorNormal = btnReadSdCard.style.backgroundColor;
+            // btnReadSdCard.style.backgroundColor = 'red';
+            ButtonStart(btnReadSdCard);
             while (sd_images.options.length > 0)
                 sd_images.options.remove(0);
 
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4) {
-                    btnReadSdCard.style.color = colorNormal;
+                    //B btnReadSdCard.style.backgroundColor = colorNormal;
+                    ButtonEnd(btnReadSdCard);
                     if (this.status == 200) {
-                        //B var dateFilter = sdDate.value.trim();
-                        var hourFilter = sdHour.value;
-                        if (hourFilter.length == 1)
-                            hourFilter = '0' + hourFilter;
-                        if (hourFilter != "")
-                            hourFilter = '/' + hourFilter + '.';
-
-                        // console.log(this.responseText);
                         var imgs = this.responseText.split('\n');
-                        for (const img of imgs) {
-                            if (img.trim().length === 0
-                                //B || (dateFilter != "" && !img.startsWith("/" + dateFilter))
-                                || (hourFilter != "" && img.indexOf(hourFilter) == -1))
-                                continue;
-                            var opt = document.createElement("option");
-                            opt.text = img;
-                            sd_images.options.add(opt);
-                        }
+                        for (const img of imgs)
+                            if (img.trim().length != 0) {
+                                var opt = document.createElement("option");
+                                opt.text = img;
+                                sd_images.options.add(opt);
+                            }
                     }
                 }
             };
             const d = new Date(sdDate.value);
-            const url = 'listSdCard?y=' + d.getFullYear() + '&m=' + (d.getMonth() + 1) + '&d=' + d.getDate();
+            const h = sdHour.value;
+            const url = 'listSdCard?y=' + d.getFullYear() + '&m=' + (d.getMonth() + 1) + '&d=' + d.getDate()
+                + (h != '' ? '&h=' + h : '');
             xhttp.open('GET', url, true); xhttp.send();
         }
         function sdImageSel() {
@@ -92,7 +100,6 @@
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4 && this.status == 200) {
-                    // console.log(this.responseText);
                     const setts = this.responseText.split('\n');
                     for (const sett of setts) {
                         const nameVal = sett.trim().split('=');
@@ -100,28 +107,25 @@
                         if (el != null)
                             el.value = nameVal[1];
                         if (nameVal[0] == "deviceName")
-                            deviceName.innerText = nameVal[1];
+                            deviceName.innerText = document.title = nameVal[1];
                     }
                 }
             };
             xhttp.open('GET', 'config.ini', true); xhttp.send();
         }
-        function getImageName() {
+        function resetEsp() {
+            ButtonStart(btnReset);
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function () {
-                if (this.readyState == 4 && this.status == 200)
-                    lblImageName.innerText = this.responseText;
+                if (this.readyState == 4)
+                    ButtonEnd(btnReset);
             };
-            xhttp.open('GET', 'getImageName', true); xhttp.send();
-        }
-        function resetEsp() {
-            var xhttp = new XMLHttpRequest();
             xhttp.open('GET', 'reset', true); xhttp.send();
         }
         function newDeviceName() {
             var name = prompt("New WebCam Name:", deviceName.innerText);
             if (name.trim() != '')
-                deviceName.innerText = name;
+                deviceName.innerText = document.title = name;
         }
     </script>
     <style>
@@ -161,10 +165,11 @@
     </style>
 </head>
 
-<body onload=" loadFavicoDelayed(); loadConfigIniDelayed(); setTodaysDate(); ">
+<body onload=" loadFavicoDelayed(); loadConfigIniDelayed(); displayDateTime(); ">
     <div>
         <h1 id='deviceName' onclick='newDeviceName();'>WebCam Preview</h1>
 
+        <hr>
         <h2>Settings</h2>
         <table>
             <tr>
@@ -227,7 +232,7 @@
             </tr>
             <tr>
                 <td></td>
-                <td><button onclick="saveSettings()" class="ctrl">Ok</button></td>
+                <td><button id='btnSaveSetts' onclick="saveSettings()" class="ctrl">Ok</button></td>
             </tr>
         </table>
         <!-- Ostala moguca podesavanja: wb_mode, blic, flip -->
@@ -245,8 +250,6 @@
             <option value="60">60 seconds</option>
         </select>
         <br>
-        <button onclick="getImageName();" class="longBtn">Get Image Name</button>
-        <br>
         <label id='lblImageName'></label>
         <br>
         <hr>
@@ -261,7 +264,7 @@
         <br>
         <hr>
 
-        <button id="btnReset" onclick="resetEsp();" class="longBtn">Save & Reset</button>
+        <button id="btnReset" onclick="resetEsp();" class="longBtn">Reset ESP</button>
     </div>
 
     <div>
