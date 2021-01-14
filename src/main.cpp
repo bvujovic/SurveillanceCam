@@ -27,6 +27,10 @@ ulong lastWebReq;
 #include "Setts.h"
 Setts setts;
 
+#include "StringLogger.h"
+const int cntMsgs = 5;
+StringLogger<cntMsgs> *msgs;
+
 #include <AiThinkerCam.h>
 AiThinkerCam cam;
 
@@ -34,47 +38,10 @@ AiThinkerCam cam;
 char imagePath[50];                       // Ovde pakujem ime fajla/slike. Npr. img_YY_MM_DD.jpg
 const char fmtFolder[] = "/%d-%02d-%02d"; // Format za ime foldera sa slikama za dati dan: yyyy-mm-dd
 
-#include "time.h"
-#include "lwip/apps/sntp.h"
-struct tm ti;                       // Tekuce/trenutno vreme.
-RTC_DATA_ATTR int timeInitHour = 0; // Sat poslednjeg uzimanja tacnog vremena sa interneta.
-// struct tm tiInit; // Vreme poslednjeg uzimanja tacnog vremena sa interneta.
-
-void getTime()
-{
-    time_t now;
-    time(&now);
-    localtime_r(&now, &ti);
-    ti.tm_year += 1900;
-    ti.tm_mon++;
-    ti.tm_hour++;
-    if (ti.tm_hour == 24)
-    {
-        ti.tm_hour = 0;
-        ti.tm_mday++;
-    }
-}
-
-void initTime()
-{
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    char *srvr = new char[30];
-    strcpy(srvr, "rs.pool.ntp.org");
-    sntp_setservername(0, srvr);
-    sntp_init();
-    ti = {0};
-    int retry = 0;
-    const int retry_count = 5;
-    while (ti.tm_year < 2020 && ++retry < retry_count)
-    {
-        delay(2000);
-        getTime();
-    }
-    if (retry >= retry_count)
-        errorFatal();
-    else
-        timeInitHour = ti.tm_hour;
-}
+#include "SleepTimer.h"
+//B RTC_DATA_ATTR SleepTimer timer(120, 4, -150);
+RTC_DATA_ATTR SleepTimer timer(-200);
+struct tm t;
 
 #include <WiFiServerBasics.h>
 WebServer server(80);
@@ -83,7 +50,10 @@ void wiFiOn()
 {
     WiFi.mode(WIFI_STA);
     ConnectToWiFi();
-    initTime();
+    // msgs->add(String(t.getLocalTime()));
+    // t.getNetTime();
+    // msgs->addSave(String(t.getLocalTime()));
+    timer.getNetTime(t);
     SetupIPAddress(setts.ipLastNum);
 }
 
@@ -113,6 +83,7 @@ void SaveSettingsHandler()
     setts.setPhotoWait(server.arg("photoWait").toInt());
     setts.saveSetts();
     SendEmptyText(server);
+    //B timer.setWakeEvery(setts.photoInterval);
 
     sensor_t *s = esp_camera_sensor_get();
     s->set_framesize(s, (framesize_t)setts.imageResolution);
@@ -147,7 +118,7 @@ void ListSdCardHandler()
         {
             if (strHour[0] == '\0' || strstr(f.name(), strHour))
                 (str += f.name()) += "\n";
-            // f.close(); //* mozda f.close() ne treba i/ili to usporava sistem
+            // f.close(); //todo mozda f.close() ne treba i/ili to usporava sistem
         }
         dir.close();
         server.send(200, "text/x-csv", str);
@@ -169,35 +140,18 @@ void SdCardImgHandler()
         server.send_P(404, "text/plain", "Error reading file");
 }
 
-void GetImageName(bool serverReply)
+void GetImageName()
 {
-    getTime();
-    CreateFolderIN(ti.tm_year, ti.tm_mon, ti.tm_mday);
+    CreateFolderIN(t.tm_year, t.tm_mon, t.tm_mday);
     if (setts.photoInterval % 60 != 0)
-        sprintf(imagePath, "%s/%02d.%02d.%02d.jpg", imagePath, ti.tm_hour, ti.tm_min, ti.tm_sec);
+        sprintf(imagePath, "%s/%02d.%02d.%02d.jpg", imagePath, t.tm_hour, t.tm_min, t.tm_sec);
     else
-        sprintf(imagePath, "%s/%02d.%02d.jpg", imagePath, ti.tm_hour, ti.tm_min);
-
-    if (serverReply)
-        server.send(200, "text/plain", imagePath);
-}
-
-int SleepSeconds(int m, int s, int itv)
-{
-    if (itv % 60 != 0) // ako itv ne predstavlja tacan broj minuta, onda nema namestanja na pocetak minuta
-        return itv;
-    int x = itv / 60;            // 300/60 = 5
-    int nextMin = m / x * x + x; // 56/5 * 5 + 5 = 11*5 + 5 = 55 + 5 = 60
-    int min = nextMin - m;       // 60 - 56 = 4
-    int sec = min * 60 - s;      // 4*60 - 30 = 240 - 30 = 210
-    return sec;
+        sprintf(imagePath, "%s/%02d.%02d.jpg", imagePath, t.tm_hour, t.tm_min);
 }
 
 void GoToSleep()
 {
-    getTime();
-    int sec = SleepSeconds(ti.tm_min, ti.tm_sec, setts.photoInterval);
-    esp_sleep_enable_timer_wakeup(secToUsec(sec));
+    esp_sleep_enable_timer_wakeup(timer.usecToSleep(t));
     esp_deep_sleep_start();
 }
 
@@ -215,22 +169,28 @@ void ResetHandler()
     GoToSleep();
 }
 
+void MsgsHandler()
+{
+    lastWebReq = millis();
+    server.send(200, "text/plain", msgs->readFromFile());
+}
+
 void setup()
 {
-    // #if TEST
-    //     blnk.ledOn(true);
-    // #endif
-    Serial.begin(115200);
-    Serial.println();
     ms = millis();
-
     if (!setts.loadSetts())
         errorFatal();
-
     setts.deviceMode = (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) ? DM_GetImage : DM_WebServer;
+
+    msgs = new StringLogger<cntMsgs>("/msgs.log");
 
     if (!SD_MMC.begin("/sdcard", true)) // 1-bitni mod
         errorFatal();
+
+    timer.setWakeEvery(setts.photoInterval);
+    timer.setNetTimeCheck(60 * 60 / setts.photoInterval); // provera vremena ide na svaki sat
+    if (!timer.isInitialized())
+        timer.setCountNetTimeCheck(0);
 
     esp_err_t err = cam.setup((framesize_t)setts.imageResolution, PIXFORMAT_JPEG);
     if (err == ESP_OK)
@@ -253,20 +213,11 @@ void setup()
         server.on("/test", []() { server.send(200, "text/plain", "SurveillanceCam test text."); });
         server.on("/listSdCard", ListSdCardHandler);
         server.on("/sdCardImg", SdCardImgHandler);
-        server.on("/getImageName", []() { GetImageName(true); }); //* zrelo za brisanje
         server.on("/reset", ResetHandler);
+        server.on("/msgs", MsgsHandler);
         server.begin();
         lastWebReq = millis();
     }
-
-    getTime();
-    //B if (ti.tm_hour != timeInitHour)
-    int blinks = timeInitHour - ti.tm_hour + 1;
-    blnk.blinkIrregular(200, 600, blinks > 5 ? 5 : blinks);
-
-    // #if TEST
-    //     blnk.ledOn(false);
-    // #endif
 }
 
 void loop()
@@ -274,7 +225,7 @@ void loop()
     if (setts.deviceMode == DM_WebServer)
     {
         server.handleClient();
-        if (millis() - lastWebReq > 2 * 60 * 1000UL) //* od ovoga napraviti sett ili const
+        if (millis() - lastWebReq > 2 * 60 * 1000UL) //todo od ovoga napraviti sett ili const
             GoToSleep();
     }
 
@@ -283,11 +234,24 @@ void loop()
 #if TEST
         blnk.ledOn(true);
 #endif
+        if (timer.shouldGetNetTime())
+        {
+            blnk.blink(500, 4);
+            ConnectToWiFi();
+            timer.getNetTime(t);
+            msgs->addSave("CoefError: " + String(timer.getCoefError()));
+        }
+        else
+        {
+            blnk.blinkOk();
+            timer.getLocalTime(t);
+        }
+
         camera_fb_t *fb = cam.getFrameBuffer();
         if (!fb)
             errorTemp();
 
-        GetImageName(false);
+        GetImageName();
 
         File file = SD_MMC.open(imagePath, FILE_WRITE);
         if (!file)
@@ -303,7 +267,6 @@ void loop()
 #if TEST
         blnk.ledOn(false);
 #endif
-        //B getTime();
         GoToSleep();
     }
 

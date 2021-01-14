@@ -13,9 +13,10 @@
             btn.style.backgroundColor = 'red';
         }
         function ButtonEnd(btn) { btn.style.backgroundColor = buttonColor; }
+        function pad2(x) { return (x < 10) ? x = '0' + x : '' + x; }
         function displayDateTime() {
             const d = new Date();
-            sdDate.value = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+            sdDate.value = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
             sdHour.value = d.getHours();
         }
         function previewImage() {

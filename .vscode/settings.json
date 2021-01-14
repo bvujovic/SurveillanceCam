@@ -6,6 +6,7 @@
         "string": "cpp",
         "functional": "cpp",
         "sstream": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "*.tpp": "cpp"
     }
 }
