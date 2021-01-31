@@ -37,6 +37,8 @@
             // btnSaveSetts.style.backgroundColor = 'red';
             ButtonStart(btnSaveSetts);
             var setts = [];
+            setts.push("deviceMode=" + deviceMode.value);
+            
             setts.push("imageResolution=" + imageResolution.value);
             setts.push("brightness=" + brightness.value);
             setts.push("gain=" + gain.value);
@@ -171,12 +173,15 @@
         <h1 id='deviceName' onclick='newDeviceName();'>WebCam Preview</h1>
 
         <hr>
+        <br>
+        Get Image: 
+        <select id="deviceMode" >
+            <option value="1">Periodically</option>
+            <option value="2">On PIR signal</option>
+        </select>
+
         <h2>Settings</h2>
         <table>
-            <tr>
-                <td>Name</td>
-                <td>Value</td>
-            </tr>
             <tr>
                 <td>Resolution</td>
                 <td>

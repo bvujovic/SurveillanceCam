@@ -14,6 +14,7 @@ private:
 public:
     DeviceMode deviceMode;
     void setDeviceMode(int x) { deviceMode = (DeviceMode)x; }
+    void setDeviceMode(DeviceMode x) { deviceMode = x; }
     String deviceName; // Naziv uredjaja: soba, kuhinja, Perina kamera i sl.
     void setDeviceName(String s) { deviceName = s; }
     int ipLastNum; // Poslednji broj u lokalnoj IP adresi: 192.168.0.x
