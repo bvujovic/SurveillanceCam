@@ -57,6 +57,20 @@
             xhttp.setRequestHeader("Content-type", "text/plain");
             xhttp.send();
         }
+        function deleteImg() {
+            ButtonStart(btnDeleteImg);
+            var xhttp = new XMLHttpRequest();
+            var idx = sd_images.selectedIndex;
+            xhttp.open("GET", "/delImg?img=" + sd_images.options[idx].text, true);
+            xhttp.onreadystatechange = function () {
+                if (this.readyState == 4) {
+                    ButtonEnd(btnDeleteImg);
+                    sd_images.remove(idx);
+                }
+            };
+            xhttp.setRequestHeader("Content-type", "text/plain");
+            xhttp.send();
+        }
         function readSdCard() {
             // var colorNormal = btnReadSdCard.style.backgroundColor;
             // btnReadSdCard.style.backgroundColor = 'red';
@@ -261,16 +275,16 @@
         <hr>
 
         <h2>SD Card</h2>
-        <input type="date" id="sdDate" placeholder="yyyy-mm-dd"> <br>
-        <button id="btnReadSdCard" onclick="readSdCard();" class="longBtn">Read SD card</button>
+        <input type="date" id="sdDate" placeholder="yyyy-mm-dd"> 
+        <button id="btnReadSdCard" onclick="readSdCard();" >Read SD card</button>
         <br>Filter hour: <input type="number" id="sdHour" min="0" max="23" style="width: 32px;">
         <br>
         <select id="sd_images" size="10" style="width: 200px; margin-top: 5px;" onchange="sdImageSel()">
         </select>
         <br>
+        <button id="btnDeleteImg" onclick="deleteImg();" class="longBtn" >Delete Image</button> <br>
         <hr>
-
-        <button id="btnReset" onclick="resetEsp();" class="longBtn">Reset ESP</button>
+        <button id="btnReset" onclick="resetEsp();" class="longBtn" style="font-weight: bold;" >Reset ESP</button>
     </div>
 
     <div>

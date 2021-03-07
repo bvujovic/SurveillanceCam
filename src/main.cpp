@@ -54,7 +54,8 @@ void wiFiOn()
     SetupIPAddress(setts.ipLastNum);
 }
 
-void PreviewHandler()
+// Prikaz slike koju je u datom trenutku uhvatila kamera.
+void previewHandler()
 {
     lastWebReq = millis();
     camera_fb_t *fb = cam.getFrameBuffer();
@@ -68,7 +69,7 @@ void PreviewHandler()
 }
 
 // http://192.168.0.60/settings?imageResolution=4&brightness=0&gain=0&photoInterval=300
-void SaveSettingsHandler()
+void saveSettingsHandler()
 {
     lastWebReq = millis();
     //B int mode = server.arg("deviceMode").toInt();
@@ -91,7 +92,7 @@ void SaveSettingsHandler()
 }
 
 // Ako ne postoji, kreira se folder sa proslenjenim datumom. Naziv foldera je u imagePath.
-void CreateFolderIN(int y, int m, int d)
+void createFolderIN(int y, int m, int d)
 {
     sprintf(imagePath, fmtFolder, y, m, d);
     if (!SD_MMC.exists(imagePath))
@@ -99,10 +100,10 @@ void CreateFolderIN(int y, int m, int d)
 }
 
 // /listSdCard?y=2020&m=12&d=15
-void ListSdCardHandler()
+void listSdCardHandler()
 {
     lastWebReq = millis();
-    CreateFolderIN(server.arg("y").toInt(), server.arg("m").toInt(), server.arg("d").toInt());
+    createFolderIN(server.arg("y").toInt(), server.arg("m").toInt(), server.arg("d").toInt());
     char strHour[5] = "";
     if (server.arg("h") != "")
         sprintf(strHour, "/%02d.", (int)server.arg("h").toInt());
@@ -126,7 +127,8 @@ void ListSdCardHandler()
         led.blink(500, 4);
 }
 
-void SdCardImgHandler()
+// Vracanje slike za dat naziv fajla.
+void sdCardImgHandler()
 {
     lastWebReq = millis();
     File f = SD_MMC.open("/" + server.arg("img"), "r");
@@ -139,21 +141,32 @@ void SdCardImgHandler()
         server.send_P(404, "text/plain", "Error reading file");
 }
 
+// Brisanje fajla/slike prosledjenog imena.
+void delImgHandler()
+{
+    lastWebReq = millis();
+    SD_MMC.remove("/" + server.arg("img"));
+    SendEmptyText(server);
+}
+
+// Upisivanje imana fajla/slike na osnovu trenutnog vremena. Kreira se novi folder za sliku ako je potrebno.
 void getImageName()
 {
-    CreateFolderIN(t.tm_year, t.tm_mon, t.tm_mday);
+    createFolderIN(t.tm_year, t.tm_mon, t.tm_mday);
     if (setts.photoInterval % 60 != 0)
         sprintf(imagePath, "%s/%02d.%02d.%02d.jpg", imagePath, t.tm_hour, t.tm_min, t.tm_sec);
     else
         sprintf(imagePath, "%s/%02d.%02d.jpg", imagePath, t.tm_hour, t.tm_min);
 }
 
+// Prikaz kompletnog /msgs.log fajla.
 void msgsHandler()
 {
     lastWebReq = millis();
     server.send(200, "text/plain", EasyFS::readf());
 }
 
+// Uspavljivanje ESP32 CAM-a.
 void goToSleep(DeviceMode dm)
 {
     // Turns off the ESP32-CAM white on-board LED (flash) connected to GPIO 4
@@ -230,11 +243,12 @@ void setup()
         server.on("/", []() { lastWebReq = millis(); HandleDataFile(server, "/index.html", "text/html"); });
         server.serveStatic("/webcam.png", SPIFFS, "/webcam.png"); // "image/png"
         server.on(setts.getFileName(), []() { lastWebReq = millis(); HandleDataFile(server, setts.getFileName(), "text/plain"); });
-        server.on("/preview", PreviewHandler);
-        server.on("/saveSettings", SaveSettingsHandler);
+        server.on("/preview", previewHandler);
+        server.on("/saveSettings", saveSettingsHandler);
         server.on("/test", []() { server.send(200, "text/plain", "SurveillanceCam test text."); });
-        server.on("/listSdCard", ListSdCardHandler);
-        server.on("/sdCardImg", SdCardImgHandler);
+        server.on("/listSdCard", listSdCardHandler);
+        server.on("/sdCardImg", sdCardImgHandler);
+        server.on("/delImg", delImgHandler);
         server.on("/reset", resetHandler);
         server.on("/msgs", msgsHandler);
         server.begin();
