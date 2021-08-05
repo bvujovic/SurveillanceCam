@@ -275,7 +275,7 @@ void loop()
             led.blink(500, 4);
             ConnectToWiFi();
             timer.getNetTime(t);
-            EasyFS::writef("CoefError: " + String(timer.getCoefError()));
+            EasyFS::addf("CoefError: " + String(timer.getCoefError()));
         }
         else
         {
