@@ -7,12 +7,15 @@
 Blinky led = Blinky::create();
 
 #include "PIR.h"
+#include <SaveToCloud.h>
 
 #include "Enums.h"
 DeviceMode currentMode;
 
-ulong ms;
-uint64_t secToUsec(int sec) { return (uint64_t)1000 * 1000 * sec; }
+const ulong SEC = 1000;     // Broj milisekundi u jednoj sekundi.
+const ulong MIN = 60 * SEC; // Broj milisekundi u jednom minutu.
+ulong msStart;              // Vreme (u ms) pocetka izvrsavanja skeca - setup().
+uint64_t secToUsec(int sec) { return (uint64_t)sec * SEC * 1000; }
 
 // Temporary problem. ESP will try to continue after reset.
 void errorTemp()
@@ -23,7 +26,7 @@ void errorTemp()
 }
 
 // Fatal error. ESP cannot continue working properly.
-void errorFatal() { led.blink(1000, 0); }
+void errorFatal() { led.blink(SEC, 0); }
 
 ulong lastWebReq;
 
@@ -103,6 +106,7 @@ void createFolderIN(int y, int m, int d)
 void listSdCardHandler()
 {
     lastWebReq = millis();
+    //? zasto bih kod pretrage SD kartice kreirao folder za slike ako on vec ne postoji?
     createFolderIN(server.arg("y").toInt(), server.arg("m").toInt(), server.arg("d").toInt());
     char strHour[5] = "";
     if (server.arg("h") != "")
@@ -118,9 +122,8 @@ void listSdCardHandler()
         {
             if (strHour[0] == '\0' || strstr(f.name(), strHour))
                 (str += f.name()) += "\n";
-            // f.close(); //todo mozda f.close() ne treba i/ili to usporava sistem
         }
-        dir.close();
+        //B dir.close();
         server.send(200, "text/x-csv", str);
     }
     else
@@ -150,7 +153,7 @@ void delImgHandler()
 }
 
 // Upisivanje imana fajla/slike na osnovu trenutnog vremena. Kreira se novi folder za sliku ako je potrebno.
-void getImageName()
+void makeImageName()
 {
     createFolderIN(t.tm_year, t.tm_mon, t.tm_mday);
     if (setts.photoInterval % 60 != 0)
@@ -177,7 +180,7 @@ void goToSleep(DeviceMode dm)
 
     if (dm == DM_PIR)
         esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 1);
-    else // default je DM_GetImage
+    else // default je DM_PeriodicXXX
         esp_sleep_enable_timer_wakeup(timer.usecToSleep(t));
     esp_deep_sleep_start();
 }
@@ -205,16 +208,19 @@ void pir()
 
 void setup()
 {
+    Serial.begin(115200);
     timer.getLocalTime(t);
     EasyFS::setFileName("/msgs.log");
     EasyFS::addf("wake " + String(timer.getCountNetTimeCheck()) + " - " + String(t.tm_min) + ":" + String(t.tm_sec));
 
-    ms = millis();
+    msStart = millis();
     if (!setts.loadSetts())
         errorFatal();
     esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-    //! ovo mora da se izmeni - mod kamere bi trebalo ucitati iz podesavanja
-    currentMode = (cause == ESP_SLEEP_WAKEUP_TIMER) ? DM_GetImage : (cause == ESP_SLEEP_WAKEUP_EXT0) ? DM_PIR : DM_WebServer;
+    if (cause == ESP_SLEEP_WAKEUP_TIMER) // tajmer -> periodicno slikanje (i slanje na SD card ili cloud)
+        currentMode = setts.deviceMode;
+    else
+        currentMode = (cause == ESP_SLEEP_WAKEUP_EXT0) ? DM_PIR : DM_WebServer;
 
     if (currentMode == DM_PIR)
         pir();
@@ -240,12 +246,21 @@ void setup()
     if (currentMode == DM_WebServer)
     {
         wiFiOn();
-        server.on("/", []() { lastWebReq = millis(); HandleDataFile(server, "/index.html", "text/html"); });
+        server.on("/", []()
+                  {
+                      lastWebReq = millis();
+                      HandleDataFile(server, "/index.html", "text/html");
+                  });
         server.serveStatic("/webcam.png", SPIFFS, "/webcam.png"); // "image/png"
-        server.on(setts.getFileName(), []() { lastWebReq = millis(); HandleDataFile(server, setts.getFileName(), "text/plain"); });
+        server.on(setts.getFileName(), []()
+                  {
+                      lastWebReq = millis();
+                      HandleDataFile(server, setts.getFileName(), "text/plain");
+                  });
         server.on("/preview", previewHandler);
         server.on("/saveSettings", saveSettingsHandler);
-        server.on("/test", []() { server.send(200, "text/plain", "SurveillanceCam test text."); });
+        server.on("/test", []()
+                  { server.send(200, "text/plain", "SurveillanceCam test text."); });
         server.on("/listSdCard", listSdCardHandler);
         server.on("/sdCardImg", sdCardImgHandler);
         server.on("/delImg", delImgHandler);
@@ -261,11 +276,13 @@ void loop()
     if (currentMode == DM_WebServer)
     {
         server.handleClient();
-        if (millis() - lastWebReq > 2 * 60 * 1000UL) //todo od ovoga napraviti sett ili const
-            goToSleep(DM_GetImage);
+        if (millis() - lastWebReq > 2 * MIN)
+            //B goToSleep(DM_PeriodicCard);
+            goToSleep(currentMode);
     }
 
-    if (currentMode == DM_GetImage && millis() - ms > setts.photoWait * 1000)
+    //B if (currentMode == DM_Periodic && millis() - ms > setts.photoWait * SEC)
+    if ((currentMode == DM_PeriodicCard || currentMode == DM_PeriodicCloud) && millis() > msStart + setts.photoWait * SEC)
     {
 #if TEST
         led.on();
@@ -273,6 +290,9 @@ void loop()
         if (timer.shouldGetNetTime())
         {
             led.blink(500, 4);
+            //? if(WiFi.status() != WL_CONNECTED)
+            //TODO ConnectToWiFi() bi trebalo prebaciti da se izvrsava ranije tako da vreme potrebno za
+            // konektovanje na net bude uracunato u setts.photoWait, a ne da se dodaje na njega
             ConnectToWiFi();
             timer.getNetTime(t);
             EasyFS::addf("CoefError: " + String(timer.getCoefError()));
@@ -286,24 +306,33 @@ void loop()
         camera_fb_t *fb = cam.getFrameBuffer();
         if (!fb)
             errorTemp();
+        makeImageName();
 
-        getImageName();
-
-        File file = SD_MMC.open(imagePath, FILE_WRITE);
-        if (!file)
-            errorTemp();
-        else
+        if (currentMode == DM_PeriodicCard) // cuvanje slike na SD karticu
         {
-            file.write(fb->buf, fb->len);
-            file.close();
+            File file = SD_MMC.open(imagePath, FILE_WRITE);
+            if (!file)
+                errorTemp();
+            else
+            {
+                file.write(fb->buf, fb->len);
+                file.close();
+            }
+            SD_MMC.end();
         }
+        if (currentMode == DM_PeriodicCloud) // slanje slike na cloud
+        {
+            ConnectToWiFi();
+            if (!SaveToCloud::sendPhoto(fb, setts.deviceName))
+                errorTemp();
+        }
+
         cam.returnFrameBuffer(fb);
-        SD_MMC.end();
 
 #if TEST
         led.off();
 #endif
-        goToSleep(DM_GetImage);
+        goToSleep(currentMode);
     }
 
     delay(100);

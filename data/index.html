@@ -32,13 +32,9 @@
             setTimeout(previewImage, val * 1000);
         }
         function saveSettings() {
-            //B
-            // var colorNormal = btnSaveSetts.style.backgroundColor;
-            // btnSaveSetts.style.backgroundColor = 'red';
             ButtonStart(btnSaveSetts);
             var setts = [];
             setts.push("deviceMode=" + deviceMode.value);
-            
             setts.push("imageResolution=" + imageResolution.value);
             setts.push("brightness=" + brightness.value);
             setts.push("gain=" + gain.value);
@@ -51,7 +47,6 @@
             xhttp.open("GET", "/saveSettings?" + s, true);
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4)
-                    //B btnSaveSetts.style.backgroundColor = colorNormal;
                     ButtonEnd(btnSaveSetts);
             };
             xhttp.setRequestHeader("Content-type", "text/plain");
@@ -188,10 +183,12 @@
 
         <hr>
         <br>
-        Get Image: 
-        <select id="deviceMode" >
-            <option value="1">Periodically</option>
-            <option value="2">On PIR signal</option>
+        Get Image:
+        <select id="deviceMode" style="margin-left: 5px;" >
+            <!-- <option value="1">Periodically</option> -->
+            <option value="11">Periodically (SD card)</option>
+            <option value="12">Periodically (Cloud)</option>
+            <option value="2">PIR signal (SD card & Email)</option>
         </select>
 
         <h2>Settings</h2>
@@ -200,15 +197,20 @@
                 <td>Resolution</td>
                 <td>
                     <select id="imageResolution">
-                        <option value="10">UXGA(1600x1200)</option>
-                        <option value="9">SXGA(1280x1024)</option>
-                        <option value="8">XGA(1024x768)</option>
-                        <option value="7">SVGA(800x600)</option>
-                        <option value="6">VGA(640x480)</option>
-                        <option value="5">CIF(400x296)</option>
-                        <option value="4" selected="selected">QVGA(320x240)</option>
-                        <option value="3">HQVGA(240x176)</option>
-                        <option value="0">QQVGA(160x120)</option>
+                        <option value="0">96x96</option>
+                        <option value="1">QQVGA (160x120)</option>
+                        <option value="2">QCIF (176x144)</option>
+                        <option value="3">HQVGA (240x176)</option>
+                        <option value="4">240X240</option>
+                        <option value="5" selected="selected">QVGA (320x240)</option>
+                        <option value="6">CIF (400x296)</option>
+                        <option value="7">HVGA (480x320)</option>
+                        <option value="8">VGA (640x480)</option>
+                        <option value="9">SVGA (800x600)</option>
+                        <option value="10">XGA (1024x768)</option>
+                        <option value="11">HD (1280x720)</option>
+                        <option value="12">SXGA (1280x1024)</option>
+                        <option value="13">UXGA (1600x1200)</option>
                     </select>
                 </td>
             </tr>

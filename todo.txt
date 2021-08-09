@@ -1,3 +1,5 @@
++ Dodavanje opcije u DM_Periodic mod:
+    Upload slike na cloud/kt.info uz/umesto snimanja na SD karticu
 PIR settings:
 	Inicijalna bleja (cekanje da covek izadje iz kuce)
 	Rezolucija slike (mozda posebna rez za mejl i posebna za cuvanje na karticu ili slanje na kt.info)
@@ -5,7 +7,5 @@ PIR settings:
     Mail adrese
 MQTT opcija (ovo bi mozda trebalo da bude pod PIR modom):
     Korisnik daljinski zahteva snimanje slike (svakih x sec) i upload na kt.info npr
-Dodavanje opcije u DM_GetImage mod:
-    Upload slike na kt.info uz/umesto snimanja na SD karticu
 [Tagovanje slika. Obelezavanje slika tekstom/komentarom. Ovo bi imalo smisla ako bi WiFi bio stalno ukljucen.]
-
+Razmisliti kako bi bilo bolje da izgleda sistem obrade gresaka, konkretno rad funkcija errorTemp i errorFatal.

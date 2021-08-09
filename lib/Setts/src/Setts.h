@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <EasyINI.h>
 #include "Enums.h"
+#include "sensor.h"
 
 // Podesavanja sacuvana u config fajlu.
 class Setts
@@ -23,12 +24,12 @@ public:
     int photoInterval; // Cekanje (u sec) izmedju 2 slikanja.
     void setPhotoInterval(int x) { photoInterval = max(x, 5); }
     int imageResolution;
-    void setImageResolution(int x) { imageResolution = constrain(x, 0, 10); }
+    void setImageResolution(int x) { imageResolution = constrain(x, 0, FRAMESIZE_UXGA); }
     int brightness;
     void setBrightness(int x) { brightness = constrain(x, -2, 2); }
     int gain;
     void setGain(int x) { gain = constrain(x, 0, 6); }
-    int photoWait; // Cekanje (u sec) od startovanja ESP-a do pravljenja slike. Ovo utice na kvalitet slike.
+    int photoWait; // Cekanje (u sec) od startovanja ESP-a do pravljenja slike. Krace cekanje - slabiji kvalitet slike.
     void setPhotoWait(int x) { photoWait = constrain(x, 0, 10); }
 
     const char *getFileName() { return fileName; }
