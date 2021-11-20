@@ -145,7 +145,7 @@
             background-color: #000;
             color: #fff;
             font-family: 'Segoe UI', Verdana, sans-serif;
-            width: 2000px;
+            width: max-content;
         }
 
         .ctrl {
@@ -181,11 +181,12 @@
     <div>
         <h1 id='deviceName' onclick='newDeviceName();'>WebCam Preview</h1>
 
+        <a href="getInfo">System Info</a>
+        <a href="msgs">Messages Log</a>
         <hr>
         <br>
         Get Image:
         <select id="deviceMode" style="margin-left: 5px;" >
-            <!-- <option value="1">Periodically</option> -->
             <option value="11">Periodically (SD card)</option>
             <option value="12">Periodically (Cloud)</option>
             <option value="2">PIR signal (SD card & Email)</option>

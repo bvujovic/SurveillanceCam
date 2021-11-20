@@ -9,7 +9,7 @@ bool SaveToCloud::sendPhoto(camera_fb_t *fb, const String& deviceName)
     String serverName = "imageuploadbv.azurewebsites.net";
     IPAddress ipAddress(13, 69, 68, 18);
 
-    Serial.println("Connecting to server...");
+    Serial.println("Connecting to cloud server...");
     client.setInsecure();
     if (!client.connect(ipAddress, 443)) // ili if (!client.connect(serverName.c_str(), 443))
     {

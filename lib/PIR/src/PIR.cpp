@@ -8,7 +8,7 @@ bool PIR::pirHandler(AiThinkerCam cam, Setts setts)
 {
     message = "";
 
-    //* slikanje
+    // slikanje
     esp_err_t err = cam.setup(framesize_t::FRAMESIZE_SVGA, PIXFORMAT_JPEG);
     if (err == ESP_OK)
     {
@@ -41,7 +41,7 @@ bool PIR::pirHandler(AiThinkerCam cam, Setts setts)
         cam.deinit();
     }
 
-    //* slanje na mejl
+    // slanje na mejl
     ConnectToWiFi();
     if (!sendPhoto(tempImgName, MailClientStorageType::SPIFFS))
     {
@@ -51,7 +51,7 @@ bool PIR::pirHandler(AiThinkerCam cam, Setts setts)
     }
     SPIFFS.end();
 
-    //* slikanje na svakih x sec i stavljanje na kt.info i/ili sd karticu
+    // slikanje na svakih x sec i stavljanje na kt.info i/ili sd karticu
     if (!SD_MMC.begin("/sdcard", true)) // 1-bitni mod
     {
         message = "SD Card Mount Failed";

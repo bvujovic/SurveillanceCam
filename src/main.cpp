@@ -98,19 +98,53 @@ void saveSettingsHandler()
 void createFolderIN(int y, int m, int d)
 {
     sprintf(imagePath, fmtFolder, y, m, d);
-    if (!SD_MMC.exists(imagePath))
-        SD_MMC.mkdir(imagePath);
+    if (currentMode != DM_PeriodicCloud)
+        if (!SD_MMC.exists(imagePath))
+            SD_MMC.mkdir(imagePath);
+}
+
+// Razne informacije o stanju aparata: trenutno vreme, prostor na fajl sistemu, [sd kartici]...
+// /getInfo
+void getInfo()
+{
+#define FMT_START "%-14s"
+    String s;
+    // vreme
+    timer.getLocalTime(t);
+    char str[30];
+    sprintf(str, FMT_START "%04d-%02d-%02d\n", "Date", t.tm_year, t.tm_mon, t.tm_mday);
+    s += str;
+    sprintf(str, FMT_START "%02d:%02d:%02d\n", "Time", t.tm_hour, t.tm_min, t.tm_sec);
+    s += str;
+    // storage na flash-u
+    size_t total = SPIFFS.totalBytes(), used = SPIFFS.usedBytes();
+    sprintf(str, FMT_START "%dkB\n", "SPIFFS total", total / 1024);
+    s += str;
+    sprintf(str, FMT_START "%dkB\n", "SPIFFS free", (total - used) / 1024);
+    s += str;
+    server.send(200, "text/plain", s);
 }
 
 // /listSdCard?y=2020&m=12&d=15
 void listSdCardHandler()
 {
     lastWebReq = millis();
-    //? zasto bih kod pretrage SD kartice kreirao folder za slike ako on vec ne postoji?
-    createFolderIN(server.arg("y").toInt(), server.arg("m").toInt(), server.arg("d").toInt());
+
     char strHour[5] = "";
-    if (server.arg("h") != "")
-        sprintf(strHour, "/%02d.", (int)server.arg("h").toInt());
+    bool listFolders;
+    if (server.args() > 0) // ima argumenata -> listanje datog foldera (datum)
+    {
+        listFolders = false;
+        //? zasto bih kod pretrage SD kartice kreirao folder za slike ako on vec ne postoji?
+        createFolderIN(server.arg("y").toInt(), server.arg("m").toInt(), server.arg("d").toInt());
+        if (server.arg("h") != "")
+            sprintf(strHour, "/%02d.", (int)server.arg("h").toInt());
+    }
+    else // poziv ove funkcije bez argumenata -> listanje root foldera
+    {
+        listFolders = true;
+        strcpy(imagePath, "/");
+    }
 
     String str;
     File dir = SD_MMC.open(imagePath);
@@ -120,7 +154,7 @@ void listSdCardHandler()
         File f;
         while (f = dir.openNextFile())
         {
-            if (strHour[0] == '\0' || strstr(f.name(), strHour))
+            if (listFolders || strHour[0] == '\0' || strstr(f.name(), strHour))
                 (str += f.name()) += "\n";
         }
         //B dir.close();
@@ -144,11 +178,25 @@ void sdCardImgHandler()
         server.send_P(404, "text/plain", "Error reading file");
 }
 
-// Brisanje fajla/slike prosledjenog imena.
+// Brisanje fajla/slike prosledjenog imena. Pretpostavljam da je img ovog oblika: 2021-08-27/05.28.50.jpg
 void delImgHandler()
 {
     lastWebReq = millis();
     SD_MMC.remove("/" + server.arg("img"));
+    SendEmptyText(server);
+}
+
+// Brisanje foldera prosledjenog imena. folder=/2021-08-27
+void delFolderHandler()
+{
+    lastWebReq = millis();
+    String folder = "/" + server.arg("folder");
+    File dir = SD_MMC.open(folder);
+    File f = dir;
+    while (f = dir.openNextFile())
+        SD_MMC.remove(f.name());
+    f.close();
+    SD_MMC.rmdir(folder);
     SendEmptyText(server);
 }
 
@@ -225,8 +273,9 @@ void setup()
     if (currentMode == DM_PIR)
         pir();
 
-    if (!SD_MMC.begin("/sdcard", true)) // 1-bitni mod
-        errorFatal();
+    if (currentMode != DM_PeriodicCloud)
+        if (!SD_MMC.begin("/sdcard", true)) // 1-bitni mod
+            errorFatal();
 
     timer.setWakeEvery(setts.photoInterval);
     timer.setNetTimeCheck(60 * 60 / setts.photoInterval); // provera vremena ide na svaki sat
@@ -243,6 +292,8 @@ void setup()
     else
         errorTemp();
 
+    if (currentMode == DM_PeriodicCloud)
+        ConnectToWiFi();
     if (currentMode == DM_WebServer)
     {
         wiFiOn();
@@ -264,8 +315,10 @@ void setup()
         server.on("/listSdCard", listSdCardHandler);
         server.on("/sdCardImg", sdCardImgHandler);
         server.on("/delImg", delImgHandler);
+        server.on("/delFolder", delFolderHandler);
         server.on("/reset", resetHandler);
         server.on("/msgs", msgsHandler);
+        server.on("/getInfo", getInfo);
         server.begin();
         lastWebReq = millis();
     }
@@ -277,11 +330,9 @@ void loop()
     {
         server.handleClient();
         if (millis() - lastWebReq > 2 * MIN)
-            //B goToSleep(DM_PeriodicCard);
             goToSleep(currentMode);
     }
 
-    //B if (currentMode == DM_Periodic && millis() - ms > setts.photoWait * SEC)
     if ((currentMode == DM_PeriodicCard || currentMode == DM_PeriodicCloud) && millis() > msStart + setts.photoWait * SEC)
     {
 #if TEST
@@ -290,9 +341,6 @@ void loop()
         if (timer.shouldGetNetTime())
         {
             led.blink(500, 4);
-            //? if(WiFi.status() != WL_CONNECTED)
-            //TODO ConnectToWiFi() bi trebalo prebaciti da se izvrsava ranije tako da vreme potrebno za
-            // konektovanje na net bude uracunato u setts.photoWait, a ne da se dodaje na njega
             ConnectToWiFi();
             timer.getNetTime(t);
             EasyFS::addf("CoefError: " + String(timer.getCoefError()));
@@ -322,7 +370,6 @@ void loop()
         }
         if (currentMode == DM_PeriodicCloud) // slanje slike na cloud
         {
-            ConnectToWiFi();
             if (!SaveToCloud::sendPhoto(fb, setts.deviceName))
                 errorTemp();
         }

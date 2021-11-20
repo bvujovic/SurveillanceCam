@@ -1,11 +1,15 @@
-+ Dodavanje opcije u DM_Periodic mod:
-    Upload slike na cloud/kt.info uz/umesto snimanja na SD karticu
-PIR settings:
+- Ispitati potrosnju memorije i da li je moguce poslati vecu sliku na cloud 9 (vecu od 640*480).
+Kakav uticaj na memoriju ima stavljanje stringova pod F("")
++ Dodati link ka msgs.log
+- Mozda bi bilo dobro razmontirati DeviceMode u dva enum-a. Jedan bi se odnosio na nacin pokretanja slikanja
+(PIR/period), a drugi na cuvanje/slanje slike (SDC, cloud, nesto trece). 
+- Mozda bi trebalo dodati mogucnost strimovanja slike/videa.
+- PIR settings:
 	Inicijalna bleja (cekanje da covek izadje iz kuce)
 	Rezolucija slike (mozda posebna rez za mejl i posebna za cuvanje na karticu ili slanje na kt.info)
 	Bleja od PIR signala do prve slike
     Mail adrese
-MQTT opcija (ovo bi mozda trebalo da bude pod PIR modom):
+- MQTT opcija (ovo bi mozda trebalo da bude pod PIR modom):
     Korisnik daljinski zahteva snimanje slike (svakih x sec) i upload na kt.info npr
 [Tagovanje slika. Obelezavanje slika tekstom/komentarom. Ovo bi imalo smisla ako bi WiFi bio stalno ukljucen.]
 Razmisliti kako bi bilo bolje da izgleda sistem obrade gresaka, konkretno rad funkcija errorTemp i errorFatal.
