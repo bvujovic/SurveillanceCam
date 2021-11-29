@@ -103,7 +103,8 @@
             setTimeout(loadFavico, 2000);
         }
         function loadFavico() {
-            document.querySelector("link[rel='icon']").href = "webcam.png";
+            //B document.querySelector("link[rel='icon']").href = "webcam.png";
+            document.querySelector("link[rel='icon']").href = "/bin?file=/webcam.png";
         }
         function loadConfigIniDelayed() {
             setTimeout(loadConfigIni, 1000);
@@ -123,7 +124,8 @@
                     }
                 }
             };
-            xhttp.open('GET', 'config.ini', true); xhttp.send();
+            //B xhttp.open('GET', 'config.ini', true); xhttp.send();
+            xhttp.open('GET', 'conf', true); xhttp.send();
         }
         function resetEsp() {
             ButtonStart(btnReset);
@@ -180,9 +182,6 @@
 <body onload=" loadFavicoDelayed(); loadConfigIniDelayed(); displayDateTime(); ">
     <div>
         <h1 id='deviceName' onclick='newDeviceName();'>WebCam Preview</h1>
-
-        <a href="getInfo">System Info</a>
-        <a href="msgs">Messages Log</a>
         <hr>
         <br>
         Get Image:
@@ -282,12 +281,18 @@
         <button id="btnReadSdCard" onclick="readSdCard();" >Read SD card</button>
         <br>Filter hour: <input type="number" id="sdHour" min="0" max="23" style="width: 32px;">
         <br>
-        <select id="sd_images" size="10" style="width: 200px; margin-top: 5px;" onchange="sdImageSel()">
+        <select id="sd_images" size="8" style="width: 200px; margin-top: 5px;" onchange="sdImageSel()">
         </select>
         <br>
         <button id="btnDeleteImg" onclick="deleteImg();" class="longBtn" >Delete Image</button> <br>
         <hr>
+
         <button id="btnReset" onclick="resetEsp();" class="longBtn" style="font-weight: bold;" >Reset ESP</button>
+        <br><br>
+
+        <a href="getInfo">System Info</a>
+        <a href="msgs">Messages Log</a>
+        <button onclick='img.src="192.168.0.61/stream"' >stream</button>
     </div>
 
     <div>
