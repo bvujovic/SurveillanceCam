@@ -19,17 +19,26 @@
             sdDate.value = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
             sdHour.value = d.getHours();
         }
-        function previewImage() {
-            img.onload = function () { previewImageDelayed(); }
+        function captureImage() {
+            img.onload = function () { captureImageDelayed(); }
             var t = new Date().getTime();
-            // img.src = server + '/preview?now=' + t;
-            img.src = 'preview?now=' + t;
+            img.src = '/capture?now=' + t;
         }
-        function previewImageDelayed() {
+        function captureImageDelayed() {
             var val = selRefresh.value;
             if (val == 0) // Slika se trazi na klik, ne na zadati interval.
                 return;
-            setTimeout(previewImage, val * 1000);
+            setTimeout(captureImage, val * 1000);
+        }
+        function streamClick() {
+            if (btnStream.innerText == 'Stream') {
+                btnStream.innerText = 'Stop';
+                img.src = '/stream';
+            }
+            else {
+                btnStream.innerText = 'Stream';
+                window.stop();
+            }
         }
         function saveSettings() {
             ButtonStart(btnSaveSetts);
@@ -44,7 +53,7 @@
             setts.push("deviceName=" + deviceName.innerText);
             var s = setts.join('&');
             var xhttp = new XMLHttpRequest();
-            xhttp.open("GET", "/saveSettings?" + s, true);
+            xhttp.open("GET", "/settsSave?" + s, true);
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4)
                     ButtonEnd(btnSaveSetts);
@@ -103,13 +112,12 @@
             setTimeout(loadFavico, 2000);
         }
         function loadFavico() {
-            //B document.querySelector("link[rel='icon']").href = "webcam.png";
-            document.querySelector("link[rel='icon']").href = "/bin?file=/webcam.png";
+            document.querySelector("link[rel='icon']").href = "/img?file=/webcam.png";
         }
-        function loadConfigIniDelayed() {
-            setTimeout(loadConfigIni, 1000);
+        function loadSettingsDelayed() {
+            setTimeout(loadSettings, 1000);
         }
-        function loadConfigIni() {
+        function loadSettings() {
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4 && this.status == 200) {
@@ -124,8 +132,7 @@
                     }
                 }
             };
-            //B xhttp.open('GET', 'config.ini', true); xhttp.send();
-            xhttp.open('GET', 'conf', true); xhttp.send();
+            xhttp.open('GET', '/settsLoad', true); xhttp.send();
         }
         function resetEsp() {
             ButtonStart(btnReset);
@@ -134,7 +141,7 @@
                 if (this.readyState == 4)
                     ButtonEnd(btnReset);
             };
-            xhttp.open('GET', 'reset', true); xhttp.send();
+            xhttp.open('GET', '/reset', true); xhttp.send();
         }
         function newDeviceName() {
             var name = prompt("New WebCam Name:", deviceName.innerText);
@@ -179,13 +186,13 @@
     </style>
 </head>
 
-<body onload=" loadFavicoDelayed(); loadConfigIniDelayed(); displayDateTime(); ">
+<body onload=" loadFavicoDelayed(); loadSettingsDelayed(); displayDateTime(); ">
     <div>
         <h1 id='deviceName' onclick='newDeviceName();'>WebCam Preview</h1>
         <hr>
         <br>
         Get Image:
-        <select id="deviceMode" style="margin-left: 5px;" >
+        <select id="deviceMode" style="margin-left: 5px;">
             <option value="11">Periodically (SD card)</option>
             <option value="12">Periodically (Cloud)</option>
             <option value="2">PIR signal (SD card & Email)</option>
@@ -260,9 +267,9 @@
         <!-- Ostala moguca podesavanja: wb_mode, blic, flip -->
         <hr>
 
-        <h2>Camera Preview</h2>
-        <button onclick="selRefresh.value = 0; previewImage();" class="longBtn">Preview</button>
-        <select id="selRefresh" onchange="previewImageDelayed()">
+        <h2>Camera</h2>
+        <button onclick="selRefresh.value = 0; captureImage();" class="longBtn">Capture</button>
+        <select id="selRefresh" onchange="captureImageDelayed()">
             <option value="0">On Click</option>
             <option value="3">3 seconds</option>
             <option value="5">5 seconds</option>
@@ -272,27 +279,28 @@
             <option value="60">60 seconds</option>
         </select>
         <br>
+        <button id='btnStream' onclick='streamClick();' class='longBtn'>Stream</button>
+        <br>
         <label id='lblImageName'></label>
         <br>
         <hr>
 
         <h2>SD Card</h2>
-        <input type="date" id="sdDate" placeholder="yyyy-mm-dd"> 
-        <button id="btnReadSdCard" onclick="readSdCard();" >Read SD card</button>
+        <input type="date" id="sdDate" placeholder="yyyy-mm-dd">
+        <button id="btnReadSdCard" onclick="readSdCard();">Read SD card</button>
         <br>Filter hour: <input type="number" id="sdHour" min="0" max="23" style="width: 32px;">
         <br>
         <select id="sd_images" size="8" style="width: 200px; margin-top: 5px;" onchange="sdImageSel()">
         </select>
         <br>
-        <button id="btnDeleteImg" onclick="deleteImg();" class="longBtn" >Delete Image</button> <br>
+        <button id="btnDeleteImg" onclick="deleteImg();" class="longBtn">Delete Image</button> <br>
         <hr>
 
-        <button id="btnReset" onclick="resetEsp();" class="longBtn" style="font-weight: bold;" >Reset ESP</button>
+        <button id="btnReset" onclick="resetEsp();" class="longBtn" style="font-weight: bold;">Reset ESP</button>
         <br><br>
 
         <a href="getInfo">System Info</a>
         <a href="msgs">Messages Log</a>
-        <button onclick='img.src="192.168.0.61/stream"' >stream</button>
     </div>
 
     <div>

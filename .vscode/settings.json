@@ -7,6 +7,12 @@
         "functional": "cpp",
         "sstream": "cpp",
         "typeinfo": "cpp",
-        "*.tpp": "cpp"
+        "*.tpp": "cpp",
+        "array": "cpp",
+        "deque": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp",
+        "vector": "cpp",
+        "initializer_list": "cpp"
     }
 }

@@ -62,6 +62,7 @@ bool setupIPAddress(int ipLastNum)
         return false;
 }
 
+const uint K = 1024;
 const ulong SEC = 1000;     // Broj milisekundi u jednoj sekundi.
 const ulong MIN = 60 * SEC; // Broj milisekundi u jednom minutu.
 ulong msStart;              // Vreme (u ms) pocetka izvrsavanja skeca - setup().
@@ -105,28 +106,11 @@ static esp_err_t streamHandler(httpd_req_t *req)
     {
         fb = esp_camera_fb_get();
         if (!fb)
-        {
-            Serial.println("Camera capture failed");
             res = ESP_FAIL;
-        }
         else
         {
-            if (fb->format != PIXFORMAT_JPEG)
-            {
-                bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
-                esp_camera_fb_return(fb);
-                fb = NULL;
-                if (!jpeg_converted)
-                {
-                    Serial.println("JPEG compression failed");
-                    res = ESP_FAIL;
-                }
-            }
-            else
-            {
-                _jpg_buf_len = fb->len;
-                _jpg_buf = fb->buf;
-            }
+            _jpg_buf_len = fb->len;
+            _jpg_buf = fb->buf;
         }
         if (res == ESP_OK)
         {
@@ -155,7 +139,7 @@ static esp_err_t streamHandler(httpd_req_t *req)
     return res;
 }
 
-static esp_err_t previewHandler(httpd_req_t *req)
+static esp_err_t captureHandler(httpd_req_t *req)
 {
     camera_fb_t *fb = NULL;
     esp_err_t res = ESP_OK;
@@ -180,20 +164,104 @@ static esp_err_t textHandler(httpd_req_t *req, const char *fileName)
     httpd_resp_set_type(req, HTTPD_TYPE_TEXT_PLAIN);
     return httpd_resp_sendstr(req, s.c_str());
 }
-
-static esp_err_t confHandler(httpd_req_t *req) { return textHandler(req, "/config.ini"); }
+static esp_err_t settsLoadHandler(httpd_req_t *req) { return textHandler(req, "/config.ini"); }
 static esp_err_t msgsHandler(httpd_req_t *req) { return textHandler(req, "/msgs.log"); }
+
+char *getArgString(const char *url, const char *arg)
+{
+    if (url == NULL)
+        return NULL;
+    char *p = strstr(url, arg);
+    if (p == NULL)
+        return NULL;
+    p = strchr(p + 1, '=');
+    if (p == NULL)
+        return NULL;
+    p++;
+    char *pEnd = p;
+    while (*pEnd != '&' && *pEnd != 0)
+        pEnd++;
+    char *res = (char *)malloc(pEnd - p + 1);
+    strncpy(res, p, pEnd - p);
+    *(res + (pEnd - p)) = 0;
+    //T Serial.println(res);
+    return res;
+}
+
+int getArgInt(const char *url, const char *arg)
+{
+    char *s = getArgString(url, arg);
+    if (s == NULL)
+        return 0;
+    int res = atoi(s);
+    free(s);
+    return res;
+}
+
+// http://192.168.0.60/settsSave?imageResolution=4&brightness=0&gain=0&photoInterval=300
+// /settsSave?deviceMode=11&imageResolution=8&brightness=0&gain=0&photoInterval=10&photoWait=2&ipLastNum=61&deviceName=Kujna
+static esp_err_t settsSaveHandler(httpd_req_t *req)
+{
+    lastWebReq = millis();
+
+    char *url = (char *)req->uri;
+    setts.setDeviceMode(getArgInt(url, "deviceMode"));
+    setts.setDeviceName(getArgString(url, "deviceName"));
+    setts.setIpLastNum(getArgInt(url, "ipLastNum"));
+    setts.setImageResolution(getArgInt(url, "imageResolution"));
+    setts.setBrightness(getArgInt(url, "brightness"));
+    setts.setGain(getArgInt(url, "gain"));
+    setts.setPhotoInterval(getArgInt(url, "photoInterval"));
+    setts.setPhotoWait(getArgInt(url, "photoWait"));
+    setts.saveSetts();
+
+    sensor_t *s = esp_camera_sensor_get();
+    s->set_framesize(s, (framesize_t)setts.imageResolution);
+    s->set_brightness(s, setts.brightness);
+    s->set_gainceiling(s, (gainceiling_t)setts.gain);
+
+    return httpd_resp_sendstr(req, "");
+}
 
 static esp_err_t indexHandler(httpd_req_t *req)
 {
-    //B
-    // const char *html = "<html><body> <button onclick='stream.src=\"/stream\"'>Start</button> <button onclick='window.stop()'>Stop</button> <img id=\"stream\" > </body></html>";
-    // return httpd_resp_sendstr(req, html);
     String s = EasyFS::read("/index.html");
     return httpd_resp_sendstr(req, s.c_str());
 }
 
-static esp_err_t getInfoHandler(httpd_req_t *req) { return textHandler(req, "/config.ini"); }
+// Razne informacije o stanju aparata: trenutno vreme, prostor na fajl sistemu, [sd kartici]...
+static esp_err_t getInfoHandler(httpd_req_t *req)
+{
+#define FMT_START "%-14s"
+    String s;
+    // datum i vreme
+    timer.getLocalTime(t);
+    char str[30];
+    sprintf(str, FMT_START "%04d-%02d-%02d\n", "Date", t.tm_year, t.tm_mon, t.tm_mday);
+    s += str;
+    sprintf(str, FMT_START "%02d:%02d:%02d\n", "Time", t.tm_hour, t.tm_min, t.tm_sec);
+    s += str;
+    // ukupan i slobodan storage na flash-u
+    size_t total = SPIFFS.totalBytes(), used = SPIFFS.usedBytes();
+    sprintf(str, FMT_START "%dkB\n", "SPIFFS total", total / K);
+    s += str;
+    sprintf(str, FMT_START "%dkB\n", "SPIFFS free", (total - used) / K);
+    s += str;
+    // heap (RAM) memorija
+    sprintf(str, FMT_START "%ukB\n", "heap total", ESP.getHeapSize() / K);
+    s += str;
+    sprintf(str, FMT_START "%uB\n", "heap free", ESP.getFreeHeap());
+    s += str;
+    sprintf(str, FMT_START "%uB\n", "heap free min", ESP.getMinFreeHeap());
+    s += str;
+    // Serial.println(ESP.getChipCores());      2
+    // Serial.println(ESP.getChipModel());      ESP32-D0WDQ5
+    // Serial.println(ESP.getChipRevision());   1
+    // Serial.println(ESP.getCpuFreqMHz());     240
+
+    httpd_resp_set_type(req, HTTPD_TYPE_TEXT_PLAIN);
+    return httpd_resp_sendstr(req, s.c_str());
+}
 
 static esp_err_t imgHandler(httpd_req_t *req)
 {
@@ -207,12 +275,11 @@ static esp_err_t imgHandler(httpd_req_t *req)
         return httpd_resp_send_404(req);
     File f = SPIFFS.open(fileName);
     size_t len = f.size();
-    uint8_t *buf = (uint8_t *)malloc(len);
-    f.read(buf, len);
-    //TODO f.readBytes(buf, len); da li moze da se radi sa char-ovima
+    char *buf = (char *)malloc(len);
+    f.readBytes(buf, len);
     f.close();
     httpd_resp_set_type(req, HTTPD_TYPE_IMAGE_PNG);
-    esp_err_t res = httpd_resp_send(req, (char *)buf, len);
+    esp_err_t res = httpd_resp_send(req, buf, len);
     free(buf);
     return res;
 }
@@ -233,26 +300,40 @@ void goToSleep(DeviceMode dm)
     esp_deep_sleep_start();
 }
 
+static esp_err_t resetHandler(httpd_req_t *req)
+{
+    httpd_resp_sendstr(req, "");
+    delay(500);
+    goToSleep(setts.deviceMode);
+    return ESP_OK;
+}
+
 void startCameraServer()
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     httpd_uri_t indexUri = {.uri = "/", .method = HTTP_GET, .handler = indexHandler};
-    httpd_uri_t confUri = {.uri = "/conf", .method = HTTP_GET, .handler = confHandler};
+    httpd_uri_t settsSaveUri = {.uri = "/settsSave", .method = HTTP_GET, .handler = settsSaveHandler};
+    httpd_uri_t settsLoadUri = {.uri = "/settsLoad", .method = HTTP_GET, .handler = settsLoadHandler};
     httpd_uri_t msgsUri = {.uri = "/msgs", .method = HTTP_GET, .handler = msgsHandler};
     httpd_uri_t getInfoUri = {.uri = "/getInfo", .method = HTTP_GET, .handler = getInfoHandler};
-    httpd_uri_t imgUri = {.uri = "/bin", .method = HTTP_GET, .handler = imgHandler};
-    httpd_uri_t previewUri = {.uri = "/preview", .method = HTTP_GET, .handler = previewHandler};
+    httpd_uri_t imgUri = {.uri = "/img", .method = HTTP_GET, .handler = imgHandler};
+    httpd_uri_t resetUri = {.uri = "/reset", .method = HTTP_GET, .handler = resetHandler};
     httpd_uri_t streamUri = {.uri = "/stream", .method = HTTP_GET, .handler = streamHandler};
+    httpd_uri_t captureUri = {.uri = "/capture", .method = HTTP_GET, .handler = captureHandler};
 
     if (httpd_start(&streamHttpd, &config) == ESP_OK)
     {
+        //* config.max_uri_handlers = 12;   ne radi
         httpd_register_uri_handler(streamHttpd, &indexUri);
-        httpd_register_uri_handler(streamHttpd, &confUri);
+        httpd_register_uri_handler(streamHttpd, &settsSaveUri);
+        httpd_register_uri_handler(streamHttpd, &settsLoadUri);
         httpd_register_uri_handler(streamHttpd, &msgsUri);
         httpd_register_uri_handler(streamHttpd, &getInfoUri);
         httpd_register_uri_handler(streamHttpd, &imgUri);
-        httpd_register_uri_handler(streamHttpd, &previewUri);
         httpd_register_uri_handler(streamHttpd, &streamUri);
+        httpd_register_uri_handler(streamHttpd, &captureUri);
+        Serial.println(esp_err_to_name(httpd_register_uri_handler(streamHttpd, &resetUri)));
+        //T Serial.println(esp_err_to_name(httpd_register_uri_handler(streamHttpd, &resetUri)));
     }
 }
 
