@@ -53,7 +53,7 @@
             setts.push("deviceName=" + deviceName.innerText);
             var s = setts.join('&');
             var xhttp = new XMLHttpRequest();
-            xhttp.open("GET", "/settsSave?" + s, true);
+            xhttp.open("GET", "/text?settsSave&" + s, true);
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4)
                     ButtonEnd(btnSaveSetts);
@@ -100,7 +100,7 @@
             };
             const d = new Date(sdDate.value);
             const h = sdHour.value;
-            const url = 'listSdCard?y=' + d.getFullYear() + '&m=' + (d.getMonth() + 1) + '&d=' + d.getDate()
+            const url = '/act?sdCardList&y=' + d.getFullYear() + '&m=' + (d.getMonth() + 1) + '&d=' + d.getDate()
                 + (h != '' ? '&h=' + h : '');
             xhttp.open('GET', url, true); xhttp.send();
         }
@@ -132,7 +132,7 @@
                     }
                 }
             };
-            xhttp.open('GET', '/settsLoad', true); xhttp.send();
+            xhttp.open('GET', '/text?settsLoad', true); xhttp.send();
         }
         function resetEsp() {
             ButtonStart(btnReset);
@@ -141,7 +141,7 @@
                 if (this.readyState == 4)
                     ButtonEnd(btnReset);
             };
-            xhttp.open('GET', '/reset', true); xhttp.send();
+            xhttp.open('GET', '/act?reset', true); xhttp.send();
         }
         function newDeviceName() {
             var name = prompt("New WebCam Name:", deviceName.innerText);
@@ -299,8 +299,8 @@
         <button id="btnReset" onclick="resetEsp();" class="longBtn" style="font-weight: bold;">Reset ESP</button>
         <br><br>
 
-        <a href="getInfo">System Info</a>
-        <a href="msgs">Messages Log</a>
+        <a href="/text?getInfo">System Info</a>
+        <a href="/text?msgs">Messages Log</a>
     </div>
 
     <div>

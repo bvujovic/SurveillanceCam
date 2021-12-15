@@ -6,8 +6,15 @@
 #include <Blinky.h>
 Blinky led = Blinky::create();
 
+#include "Enums.h"
+DeviceMode currentMode;
+
 #include <AiThinkerCam.h>
 AiThinkerCam cam;
+
+#include "SD_MMC.h"
+char imagePath[50];                       // Ovde pakujem ime fajla/slike. Npr. img_YY_MM_DD.jpg
+const char fmtFolder[] = "/%d-%02d-%02d"; // Format za ime foldera sa slikama za dati dan: yyyy-mm-dd
 
 ulong lastWebReq;
 
@@ -28,7 +35,7 @@ struct tm t;
 
 bool connectToWiFi()
 {
-    Serial.printf("\nConnecting to: %s\n", WIFI_SSID);
+    //T Serial.printf("\nConnecting to: %s\n", WIFI_SSID);
     //T Serial.print("\nConnecting to ");
     //T Serial.print(WIFI_SSID);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -60,6 +67,14 @@ bool setupIPAddress(int ipLastNum)
     }
     else
         return false;
+}
+
+void wiFiOn()
+{
+    WiFi.mode(WIFI_STA);
+    connectToWiFi();
+    timer.getNetTime(t);
+    setupIPAddress(setts.ipLastNum);
 }
 
 const uint K = 1024;
@@ -158,17 +173,37 @@ static esp_err_t captureHandler(httpd_req_t *req)
     return res;
 }
 
-static esp_err_t textHandler(httpd_req_t *req, const char *fileName)
+static esp_err_t imgHandler(httpd_req_t *req)
 {
-    String s = EasyFS::read(fileName);
-    httpd_resp_set_type(req, HTTPD_TYPE_TEXT_PLAIN);
+    char *fileName = (char *)req->uri;
+    //T Serial.printf("imgHandler %s\n", fileName);
+    while (*fileName != 0 && *fileName != '=')
+        fileName++;
+    if (*fileName == 0)
+        return httpd_resp_send_404(req);
+    fileName++;
+    if (!SPIFFS.exists(fileName))
+        return httpd_resp_send_404(req);
+    File f = SPIFFS.open(fileName);
+    size_t len = f.size();
+    char *buf = (char *)malloc(len);
+    f.readBytes(buf, len);
+    f.close();
+    httpd_resp_set_type(req, HTTPD_TYPE_IMAGE_PNG);
+    esp_err_t res = httpd_resp_send(req, buf, len);
+    free(buf);
+    return res;
+}
+
+static esp_err_t indexHandler(httpd_req_t *req)
+{
+    String s = EasyFS::read("/index.html");
     return httpd_resp_sendstr(req, s.c_str());
 }
-static esp_err_t settsLoadHandler(httpd_req_t *req) { return textHandler(req, "/config.ini"); }
-static esp_err_t msgsHandler(httpd_req_t *req) { return textHandler(req, "/msgs.log"); }
 
 char *getArgString(const char *url, const char *arg)
 {
+    //T Serial.println(arg);
     if (url == NULL)
         return NULL;
     char *p = strstr(url, arg);
@@ -198,13 +233,14 @@ int getArgInt(const char *url, const char *arg)
     return res;
 }
 
-// http://192.168.0.60/settsSave?imageResolution=4&brightness=0&gain=0&photoInterval=300
+///settsSave?imageResolution=4&brightness=0&gain=0&photoInterval=300
 // /settsSave?deviceMode=11&imageResolution=8&brightness=0&gain=0&photoInterval=10&photoWait=2&ipLastNum=61&deviceName=Kujna
-static esp_err_t settsSaveHandler(httpd_req_t *req)
+static esp_err_t settsSave(httpd_req_t *req)
 {
     lastWebReq = millis();
 
     char *url = (char *)req->uri;
+    Serial.println(url);
     setts.setDeviceMode(getArgInt(url, "deviceMode"));
     setts.setDeviceName(getArgString(url, "deviceName"));
     setts.setIpLastNum(getArgInt(url, "ipLastNum"));
@@ -223,14 +259,8 @@ static esp_err_t settsSaveHandler(httpd_req_t *req)
     return httpd_resp_sendstr(req, "");
 }
 
-static esp_err_t indexHandler(httpd_req_t *req)
-{
-    String s = EasyFS::read("/index.html");
-    return httpd_resp_sendstr(req, s.c_str());
-}
-
 // Razne informacije o stanju aparata: trenutno vreme, prostor na fajl sistemu, [sd kartici]...
-static esp_err_t getInfoHandler(httpd_req_t *req)
+static esp_err_t getInfo(httpd_req_t *req)
 {
 #define FMT_START "%-14s"
     String s;
@@ -263,25 +293,36 @@ static esp_err_t getInfoHandler(httpd_req_t *req)
     return httpd_resp_sendstr(req, s.c_str());
 }
 
-static esp_err_t imgHandler(httpd_req_t *req)
+static esp_err_t text(httpd_req_t *req, const char *fileName)
 {
-    char *fileName = (char *)req->uri;
-    while (*fileName != 0 && *fileName != '=')
-        fileName++;
-    if (*fileName == 0)
-        return httpd_resp_send_404(req);
-    fileName++;
-    if (!SPIFFS.exists(fileName))
-        return httpd_resp_send_404(req);
-    File f = SPIFFS.open(fileName);
-    size_t len = f.size();
-    char *buf = (char *)malloc(len);
-    f.readBytes(buf, len);
-    f.close();
-    httpd_resp_set_type(req, HTTPD_TYPE_IMAGE_PNG);
-    esp_err_t res = httpd_resp_send(req, buf, len);
-    free(buf);
-    return res;
+    String s = EasyFS::read(fileName);
+    if (!strstr(fileName, ".html")) // ako u fileName nema ".html" -> onda vracam obican tekst
+        httpd_resp_set_type(req, HTTPD_TYPE_TEXT_PLAIN);
+    return httpd_resp_sendstr(req, s.c_str());
+}
+
+static esp_err_t textHandler(httpd_req_t *req)
+{
+    char *url = (char *)req->uri;
+    //T Serial.printf("textHandler %s\n", url);
+    if (strstr(url, "settsLoad"))
+        return text(req, "/config.ini");
+    if (strstr(url, "settsSave"))
+        return settsSave(req);
+    if (strstr(url, "msgs"))
+        return text(req, "/msgs.log");
+    if (strstr(url, "getInfo"))
+        return getInfo(req);
+    return httpd_resp_send_404(req);
+}
+
+// Ako ne postoji, kreira se folder sa proslenjenim datumom. Naziv foldera je u imagePath.
+void createFolderIN(int y, int m, int d)
+{
+    sprintf(imagePath, fmtFolder, y, m, d);
+    if (currentMode != DM_PeriodicCloud)
+        if (!SD_MMC.exists(imagePath))
+            SD_MMC.mkdir(imagePath);
 }
 
 // Uspavljivanje ESP32 CAM-a.
@@ -293,6 +334,7 @@ void goToSleep(DeviceMode dm)
     digitalWrite(pinLedFlash, LOW);
     rtc_gpio_hold_en(pinLedFlash);
 
+    //T Serial.println(dm);
     if (dm == DM_PIR)
         esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 1);
     else // default je DM_PeriodicXXX
@@ -300,7 +342,7 @@ void goToSleep(DeviceMode dm)
     esp_deep_sleep_start();
 }
 
-static esp_err_t resetHandler(httpd_req_t *req)
+static esp_err_t reset(httpd_req_t *req)
 {
     httpd_resp_sendstr(req, "");
     delay(500);
@@ -308,31 +350,89 @@ static esp_err_t resetHandler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// Upisivanje imana fajla/slike na osnovu trenutnog vremena. Kreira se novi folder za sliku ako je potrebno.
+void makeImageName()
+{
+    createFolderIN(t.tm_year, t.tm_mon, t.tm_mday);
+    if (setts.photoInterval % 60 != 0)
+        sprintf(imagePath, "%s/%02d.%02d.%02d.jpg", imagePath, t.tm_hour, t.tm_min, t.tm_sec);
+    else
+        sprintf(imagePath, "%s/%02d.%02d.jpg", imagePath, t.tm_hour, t.tm_min);
+}
+
+// /act?sdCardList&y=2021&m=12&d=15&h=20
+static esp_err_t sdCardList(httpd_req_t *req)
+{
+    lastWebReq = millis();
+    char *url = (char *)req->uri;
+    char strHour[5] = "";
+    bool listFolders;
+    //Bif (server.args() > 0)
+    if (strstr(url, "&y=")) // ako je dat 'y' (i 'm' i 'd') -> listanje datog foldera (datum)
+    {
+        listFolders = false;
+        //B
+        // createFolderIN(server.arg("y").toInt(), server.arg("m").toInt(), server.arg("d").toInt());
+        // if (server.arg("h") != "")
+        //     sprintf(strHour, "/%02d.", (int)server.arg("h").toInt());
+        //? zasto bih kod pretrage SD kartice kreirao folder za slike ako on vec ne postoji?
+        createFolderIN(getArgInt(url, "y="), getArgInt(url, "m="), getArgInt(url, "d="));
+        if (getArgInt(url, "h="))
+            sprintf(strHour, "/%02d.", getArgInt(url, "h="));
+    }
+    else // poziv ove funkcije bez argumenata -> listanje root foldera
+    {
+        listFolders = true;
+        strcpy(imagePath, "/");
+    }
+    String str;
+    File dir = SD_MMC.open(imagePath);
+    if (dir)
+    {
+        File f;
+        while (f = dir.openNextFile())
+            if (listFolders || strHour[0] == '\0' || strstr(f.name(), strHour))
+                (str += f.name()) += "\n";
+        //B server.send(200, "text/x-csv", str);
+        httpd_resp_set_type(req, "text/x-csv");
+        return httpd_resp_sendstr(req, str.c_str());
+    }
+    return httpd_resp_send_404(req);
+}
+
+static esp_err_t actHandler(httpd_req_t *req)
+{
+    char *url = (char *)req->uri;
+    //T Serial.printf("actHandler %s\n", url);
+    if (strstr(url, "?reset"))
+        return reset(req);
+    if (strstr(url, "?sdCardList"))
+        return sdCardList(req);
+    return httpd_resp_send_404(req);
+}
+
 void startCameraServer()
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     httpd_uri_t indexUri = {.uri = "/", .method = HTTP_GET, .handler = indexHandler};
-    httpd_uri_t settsSaveUri = {.uri = "/settsSave", .method = HTTP_GET, .handler = settsSaveHandler};
-    httpd_uri_t settsLoadUri = {.uri = "/settsLoad", .method = HTTP_GET, .handler = settsLoadHandler};
-    httpd_uri_t msgsUri = {.uri = "/msgs", .method = HTTP_GET, .handler = msgsHandler};
-    httpd_uri_t getInfoUri = {.uri = "/getInfo", .method = HTTP_GET, .handler = getInfoHandler};
+    httpd_uri_t textUri = {.uri = "/text", .method = HTTP_GET, .handler = textHandler};
+    httpd_uri_t actUri = {.uri = "/act", .method = HTTP_GET, .handler = actHandler};
     httpd_uri_t imgUri = {.uri = "/img", .method = HTTP_GET, .handler = imgHandler};
-    httpd_uri_t resetUri = {.uri = "/reset", .method = HTTP_GET, .handler = resetHandler};
-    httpd_uri_t streamUri = {.uri = "/stream", .method = HTTP_GET, .handler = streamHandler};
     httpd_uri_t captureUri = {.uri = "/capture", .method = HTTP_GET, .handler = captureHandler};
+    httpd_uri_t streamUri = {.uri = "/stream", .method = HTTP_GET, .handler = streamHandler};
+    // server.on("/sdCardImg", sdCardImgHandler);
+    // server.on("/delImg", delImgHandler);
+    // server.on("/delFolder", delFolderHandler);
 
     if (httpd_start(&streamHttpd, &config) == ESP_OK)
     {
-        //* config.max_uri_handlers = 12;   ne radi
+        //* config.max_uri_handlers = 12;   ne radi, i dalje je max uri handlera 8
         httpd_register_uri_handler(streamHttpd, &indexUri);
-        httpd_register_uri_handler(streamHttpd, &settsSaveUri);
-        httpd_register_uri_handler(streamHttpd, &settsLoadUri);
-        httpd_register_uri_handler(streamHttpd, &msgsUri);
-        httpd_register_uri_handler(streamHttpd, &getInfoUri);
+        httpd_register_uri_handler(streamHttpd, &textUri);
+        httpd_register_uri_handler(streamHttpd, &actUri);
         httpd_register_uri_handler(streamHttpd, &imgUri);
-        httpd_register_uri_handler(streamHttpd, &streamUri);
         httpd_register_uri_handler(streamHttpd, &captureUri);
-        Serial.println(esp_err_to_name(httpd_register_uri_handler(streamHttpd, &resetUri)));
+        httpd_register_uri_handler(streamHttpd, &streamUri);
         //T Serial.println(esp_err_to_name(httpd_register_uri_handler(streamHttpd, &resetUri)));
     }
 }
@@ -346,7 +446,18 @@ void setup()
     msStart = millis();
     if (!setts.loadSetts())
         errorFatal();
-    SPIFFS.begin();
+    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    if (cause == ESP_SLEEP_WAKEUP_TIMER) // tajmer -> periodicno slikanje (i slanje na SD card ili cloud)
+        currentMode = setts.deviceMode;
+    else
+        currentMode = (cause == ESP_SLEEP_WAKEUP_EXT0) ? DM_PIR : DM_WebServer;
+
+    // if (currentMode == DM_PIR)
+    //     pir();
+
+    if (currentMode != DM_PeriodicCloud)
+        if (!SD_MMC.begin("/sdcard", true)) // 1-bitni mod
+            errorFatal();
 
     timer.setWakeEvery(setts.photoInterval);
     timer.setNetTimeCheck(60 * 60 / setts.photoInterval); // provera vremena ide na svaki sat
@@ -363,12 +474,72 @@ void setup()
     else
         errorTemp();
 
-    connectToWiFi();
-    startCameraServer();
-    setupIPAddress(60);
+    if (currentMode == DM_PeriodicCloud)
+        connectToWiFi();
+    if (currentMode == DM_WebServer)
+    {
+        wiFiOn();
+        startCameraServer();
+        setupIPAddress(setts.ipLastNum);
+    }
 }
 
 void loop()
 {
+    if (currentMode == DM_WebServer)
+    {
+        //B server.handleClient();
+        if (millis() - lastWebReq > 2 * MIN)
+            goToSleep(currentMode);
+    }
+
+    if ((currentMode == DM_PeriodicCard || currentMode == DM_PeriodicCloud) && millis() > msStart + setts.photoWait * SEC)
+    {
+#if TEST
+        led.on();
+#endif
+        if (timer.shouldGetNetTime())
+        {
+            led.blink(500, 4);
+            connectToWiFi();
+            timer.getNetTime(t);
+            EasyFS::addf("CoefError: " + String(timer.getCoefError()));
+        }
+        else
+        {
+            led.blinkOk();
+            timer.getLocalTime(t);
+        }
+
+        camera_fb_t *fb = cam.getFrameBuffer();
+        if (!fb)
+            errorTemp();
+        makeImageName();
+
+        if (currentMode == DM_PeriodicCard) // cuvanje slike na SD karticu
+        {
+            File file = SD_MMC.open(imagePath, FILE_WRITE);
+            if (!file)
+                errorTemp();
+            else
+            {
+                file.write(fb->buf, fb->len);
+                file.close();
+            }
+            SD_MMC.end();
+        }
+        // if (currentMode == DM_PeriodicCloud) // slanje slike na cloud
+        // {
+        //     if (!SaveToCloud::sendPhoto(fb, setts.deviceName))
+        //         errorTemp();
+        // }
+
+        cam.returnFrameBuffer(fb);
+
+#if TEST
+        led.off();
+#endif
+        goToSleep(currentMode);
+    }
     delay(10);
 }
